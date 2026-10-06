@@ -21,6 +21,13 @@ install_isr08:
 	mov di, 0x0020  ; IVT offset for ISR 08h (PIT)
 
 	cli
+
+	; save the old BIOS nonsense
+	mov ax, [es:0x0020]
+	mov [old_timer_off], ax
+	mov ax, [es:0x0022]
+	mov [old_timer_seg], ax
+
 	mov word [es:di],   isr08_wrapper ; store offset
 	mov word [es:di+2], cs            ; store segment
 	sti
@@ -42,11 +49,12 @@ isr08_wrapper:
 	call k_timer_callback
 
 
-	mov al, 0x20
-	out 0x20, al          ; PIC EOI	
+;	mov al, 0x20
+;	out 0x20, al          ; PIC EOI	
 
 	pop es
 	pop ds
 	popa
 
+	jmp far [cs:old_timer_off]
 	iret
