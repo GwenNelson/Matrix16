@@ -26,7 +26,6 @@ kernel_boot:
 	mov si,first_message
 	call puts
 	
-	jmp $ ; temporary, cos we want to make sure the first sector load is working first
 	times (1024 * 24) nop
 
 	mov si,second_message

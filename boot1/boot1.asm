@@ -104,7 +104,7 @@ puts:
 	ret
 
 starting_msg:
-	db "Starting Matrix16...",0
+	db "Starting Matrix16...",13,10,0
 wrong_drive_msg:
 	db "Wrong drive, insert in A:, reboot",0
 fail_msg:
