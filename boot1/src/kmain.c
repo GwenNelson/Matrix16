@@ -15,6 +15,13 @@ typedef struct registers_t {
 
 extern uint16_t bios_read_sector(uint16_t es, uint16_t bx, uint16_t cylinder, uint16_t head, uint16_t sector, uint16_t drive);
 
+static void lba2chs(uint16_t lba, uint16_t *cylinder, uint16_t *head, uint16_t *sector) {
+	// this is a dumb quick hack, but it works
+	*cylinder = lba / 18;
+	*head     = (lba % 18) / 9;
+	*sector   = (lba % 9) + 1;
+}
+
 extern void install_isr08(void);
 extern void install_isr80(void);
 
