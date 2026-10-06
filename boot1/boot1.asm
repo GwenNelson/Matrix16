@@ -34,24 +34,51 @@ start:
 	mov ax,1000h
 	mov es,ax
 
+	; let's put the remaining sectors into SI cos it's convenient
+	mov si, KERNEL_SECTORS
+
 	; now setup the BIOS params
+	mov ch, 0 ; cyl 0
+	mov cl, 2 ; sector 2 (1 is bootsector)
+	mov dh, 0 ; head 0
+	mov dl, 0 ; drive 0 (A:)
+	mov bx, 0 ; offset into BX
+
+.read_next:
 	mov ah,02h ; read sectors call
 	mov al,01h ; number of sectors to read
-
-	mov ch,0    ; cylinder
-	mov cl,02   ; sector (1-indexed, not 0-indexed)
-	mov dh,0    ; head
-	mov dl,0    ; drive number
-	mov bx,0    ; offset in segment (ES:BX)
 	int 0x13
-	
 	jc .error
 
+	dec si
+	jz .done   ; if SI==0, we're done
 
+	add bx,512  ; move along data buffer
+
+	inc cl      ; move to next sector
+	cmp cl,10   ; if CL < 10, continue (valid sector, no need to move head/cylinder)
+	jl .check_done
+
+.next_head:
+	mov cl, 1       ; reset sector back to 1
+	inc dh          ; move to next head
+	cmp dh, 2       ; if we're < head 2, (e.g still H=0 or H=1) continue
+	jl .check_done
+
+.next_cyl:
+	mov dh, 0	; reset head back to 0
+	inc ch 		; move to next cylinder
+
+.check_done:
+	; we don't actually need to check anything here as such
+	jmp .read_next
+
+
+.done:
 	mov al, 'K'
 	out 0xE9, al
 	; far jump into the kernel
-	jmp 0x1000:0000
+	jmp word 0x1000:0000
 
 .error:
 	mov si,fail_msg
