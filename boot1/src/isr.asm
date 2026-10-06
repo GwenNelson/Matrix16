@@ -1,12 +1,25 @@
 bits 16
 
 global install_isr08
+global install_isr80
 
 extern k_timer_callback
+extern k_syscall_callback
 
 section .data
 old_timer_off dw 0
 old_timer_seg dw 0
+
+install_isr80:
+	xor ax,ax
+	mov es,ax
+
+	cli
+	mov word [es:0x0200], isr80_wrapper
+	mov word [es:0x0202], cs
+	sti
+	ret
+
 
 install_isr08:
 	; save segment registers we mess with
@@ -57,4 +70,24 @@ isr08_wrapper:
 	popa
 
 	jmp far [cs:old_timer_off]
+	iret
+
+isr80_wrapper:
+	pusha
+	push ds
+	push es
+
+	mov ax, cs
+	mov ds, ax
+	mov es, ax
+
+	push sp
+
+	call k_syscall_callback
+
+	add sp,2
+
+	pop es
+	pop ds
+	popa
 	iret
