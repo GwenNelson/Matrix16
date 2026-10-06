@@ -13,7 +13,6 @@ kernel_boot:
 	cli
 	mov ss, ax
 	mov sp, 0xFFFE ; our stack is at the end of this segment basically
-	sti
 
 	call kernel_main
 
