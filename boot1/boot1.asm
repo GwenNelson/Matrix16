@@ -47,8 +47,11 @@ start:
 .read_next:
 	mov ah,02h ; read sectors call
 	mov al,01h ; number of sectors to read
+
+	push si ; save SI so BIOS can't fuck with it
 	int 0x13
 	jc .error
+	pop si ; restore SI
 
 	dec si
 	jz .done   ; if SI==0, we're done
