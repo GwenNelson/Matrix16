@@ -4,7 +4,9 @@ BITS 16
 
 extern kernel_main
 
-kernel_boot:
+global kernel_start
+
+kernel_start:
 	; setup the kernel's segments explicitly
 	mov ax, 0x1000
 	mov ds, ax

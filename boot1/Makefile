@@ -14,10 +14,13 @@ $(BUILD):
 $(BUILD)/kentry.o: $(SRC)/kentry.asm | $(BUILD)
 	$(NASM) -f elf $< -o $@
 
+$(BUILD)/biosdisk.o: $(SRC)/biosdisk.asm | $(BUILD)
+	$(NASM) -f elf $< -o $@
+
 $(BUILD)/kmain.o: $(SRC)/kmain.c | $(BUILD)
 	$(CC) -ffreestanding -c $(SRC)/kmain.c -o $@
 
-$(BUILD)/kernel.elf: $(BUILD)/kentry.o $(BUILD)/kmain.o
+$(BUILD)/kernel.elf: $(BUILD)/kentry.o $(BUILD)/biosdisk.o $(BUILD)/kmain.o
 	$(LD) -T $(SRC)/kernel.ld -o $@ $^
 
 $(BUILD)/kernel.bin: $(BUILD)/kernel.elf
