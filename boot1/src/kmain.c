@@ -21,8 +21,19 @@ static void bios_puts(char* s) {
 	}
 }
 
+char buf[512];
+
 void kernel_main(void) {
 	bios_puts("\r\n");
 	bios_puts("\r\nMatrix16 Kernel loaded!\r\n");
+	bios_puts("\r\n");
+
+	bios_puts("About to check reading from ROOTFS floppy...\r\n");
+	if(bios_read_sector(0x1000, ((uint16_t)&buf),0,0,1,1) != 0 ) {
+		bios_puts("And failed\r\n");
+	} else {
+		bios_puts((char*)buf);
+	}
+
 	for(;;);
 }
