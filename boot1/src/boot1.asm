@@ -78,8 +78,6 @@ start:
 
 
 .done:
-	mov al, 'K'
-	out 0xE9, al
 	; far jump into the kernel
 	jmp word 0x1000:0000
 
@@ -123,7 +121,7 @@ dw 0xAA55
 
 ; the actual kernel itself now (on all remaining sectors)
 kernel_start:
-incbin "kernel.bin"
+incbin "build/kernel.bin"
 kernel_end:
 
 KERNEL_BYTES   equ kernel_end - kernel_start

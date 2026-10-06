@@ -1,2 +1,4 @@
 *.img
 *.bin
+*.o
+boot1/build/*
