@@ -28,7 +28,7 @@ start:
 	call puts
 
 	; now let's load the kernel into the right place
-	; our kernel is at C=0 H=0 S=1 onwards, but BIOS INT 13h is not zero indexed annoyingly
+	; our kernel is at C=0 H=0 S=2 onwards, but BIOS INT 13h is not zero indexed annoyingly
 	; we want to load to es:bx, so let's set that up first
 
 	mov ax,1000h
@@ -50,8 +50,8 @@ start:
 
 	push si ; save SI so BIOS can't fuck with it
 	int 0x13
+	pop si ; restore SI here
 	jc .error
-	pop si ; restore SI
 
 	dec si
 	jz .done   ; if SI==0, we're done
