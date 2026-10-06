@@ -1,0 +1,18 @@
+Basic goal:
+	Something akin to a fancy new OS from 1985/1986 for the IBM PC/AT or Amstrad PC1512
+	Assume only around 512kb RAM (up to  0x80000)
+	
+
+Tasks:
+	per-task arenas of 64kb (CS=DS=ES=SS)
+
+Kernel:
+	Lives at segment 1000h - that would be physical 0x10000
+
+Tasks live at 2000h up to 7000h
+Each task occupies 1000h (e.g one 64kb segment)
+
+Two floppies:
+	Kernel+Bootloader floppy
+		Not FAT - very simple dump of kernel image to raw sectors
+		Simple little MBR
