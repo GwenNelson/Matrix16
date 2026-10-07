@@ -1,0 +1,60 @@
+Matrix16 implements up to 4 virtual consoles using the hardware pages for fast switching:
+	VC0 = B800:0000
+	VC1 = B900:0000
+	VC2 = BA00:0000
+	VC3 = BB00:0000
+
+kconsole.c requires these functions and data:
+
+	static console_state_t[4]
+		precise fields can be defined as needed to implement the API
+		ignore the existing console_state_t struct in kmain.c for now - pretend no structs or datatypes in kmain.c exist
+		use stdint.h for the integer types
+		this needs whatever state needed, including the input ringbuffer
+
+	static uint8_t active_console;
+
+	static void (*kb_save_cb)(void);
+		this is a function pointer for the save menu callback - to be invoked by kconsole if not NULL and the user presses ctrl-alt-s
+	static void (*kb_switch_cb)(uint8_t console_num);
+		this is a function pointer for the switch console callback - to be invoked by kconsole if not NULL and the user presses ctrl-alt-F1 through to ctrl-alt-F4
+
+	void kconsole_init(uint8_t page_num);
+		page_num is an enum or constant usually:
+			PAGENUM_VC0=0
+			PAGENUM_VC1=1
+			PAGENUM_VC2=2
+			PAGENUM_VC3=3
+		this function will use a lookup table to find the address of that page in VRAM
+		then it'll clear that page
+		a global console_state_t struct will then store the current cursor position (initialized to 0,0) for that page
+	void kconsole_set_save_cb(void (*callback)(void));
+		this is used to assign the kb_save_cb function pointer
+	void kconsole_set_switch_cb(void (*callback)(uint8_t console_num));
+		this is used to assign the kb_switch_cb function pointer
+	void kconsole_switchto(uint8_t page_num);
+		takes the same constants as kconsole_init
+		switches using BIOS INT 10h, AH=05h, AL=page_num
+		moves hardware cursor to whatever is in the global console_state_t struct
+		this should result in that console now being visible on screen
+	void kconsole_move_cursor(uint8_t page_num, uint8_t row, uint8_t col);
+		updates the cursor position in the global struct
+		if that page is active, moves the hardware cursor
+	void kconsole_putc(uint8_t page_num, char c);
+		properly handles standard ANSI control sequences etc, writes to the VRAM and updates cursor using kconsole_move_cursor()
+		any state needed for handling ANSI control sequences can be held inside console_state_t struct
+		obviously only writes to the relevant bit of VRAM as defined above - if not the current active console, this should still update the other page's VRAM and state
+	void kconsole_kb_callback(uint8_t scancode);
+		this is the "keyboard callback" which will be called from the ISR
+		it should check the active console and append the character to that console's input ringbuffer (where kconsole_getc can read it)
+		if the buffer is full, it should simply discard the character - but take care with key release state and do something sane for this
+		we must NOT lose key release events and corrupt state
+		this callback receives raw scancodes read from 60h by the rest of the kernel, it is responsible for turning that into something fairly sane as expected by an ANSI terminal
+		assume XT scancode set 1
+		special cases:
+			if the user presses ctrl-alt-s, check if kb_save_cb is NULL, and if not then call that and do NOT append to the console's ringbuffer
+				however, normal ctrl-s should still go to the ringbuffer - the intention being that tasks can still handle ctrl-s themselves
+			if the user presses ctrl-alt-F1 through to ctrl-alt-F4, call kb_switch_cb (if not NULL) and pass the number 1-4 as the first param
+	bool kconsole_getc(uint8_t page_num, char* out);
+		this sees if there's any characters waiting on the "stdin" buffer for that console, if so it writes to *out and returns true
+		otherwise it returns true

@@ -27,16 +27,20 @@ typedef enum task_state_t {
 	FROZEN  = 2,
 } task_state_t;
 
+struct task_context_t {
+    uint16_t ax, bx, cx, dx;
+    uint16_t si, di, bp;
+    uint16_t sp, ip, flags;
+} task_context_t;
+
 typedef struct task_t {
-	uint16_t     segment;
-	uint16_t     sp;
-	uint16_t     flags;
+	task_context_t ctx;
 	task_state_t state;
 } task_t;
 
 typedef struct console_t {
-	uint8_t bios_page_no;
-	uint16_t
+	uint8_t  bios_page_no;
+	uint16_t vram_phys;
 } console_t;
 
 extern uint16_t bios_read_sector(uint16_t es, uint16_t bx, uint16_t cylinder, uint16_t head, uint16_t sector, uint16_t drive);
@@ -372,6 +376,9 @@ void load_system_cfg(void) {
 
 		line = next;
 	}
+
+	if(system_cfg_consoles > 4)
+		kpanic("maximum of 4 consoles allowed!");
 }
 
 
