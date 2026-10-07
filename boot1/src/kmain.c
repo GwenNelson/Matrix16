@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stdbool.h>
 
 typedef struct registers_t {
     uint16_t es;       // Top of stack after segment push
@@ -39,7 +40,19 @@ static void bios_putchar(char c) {
 
 static void bios_puts(char* s) {
 	while(*s) {
-		bios_putchar(*s);
+		switch(*s) {
+			case '\t':
+				for(int i=0; i<8; i++) bios_putchar(' ');
+			break;
+			case '\n':
+				bios_putchar('\r');
+				bios_putchar('\n');
+			break;
+			default:
+				bios_putchar(*s);
+			break;
+		}
+
 		s++;
 	}
 }
@@ -60,29 +73,79 @@ uint16_t fs_read_rootfs_block(uint16_t lba, uint16_t es, uint16_t bx) {
 	return bios_read_sector(es,bx,c,h,s,1);
 }
 
-void fs_check_super(void) {
-	bios_puts("Checking rootfs in B:...\r\n");
+static void bios_put_decimal(uint16_t n) {
+	char digits[5];
+	uint8_t count = 0;
+
+	do {
+		digits[count++] = '0' + (n % 10);
+		n /= 10;
+	} while(n != 0);
+
+	while(count != 0) {
+		bios_putchar(digits[--count]);
+	}
+}
+
+static void bios_put_hex(uint16_t n) {
+	static const char digits[] = "0123456789ABCDEF";
+	uint8_t shift = 12;
+	uint8_t started = 0;
+
+	bios_puts("0x");
+	while(shift != 0 || !started) {
+		uint8_t digit = (n >> shift) & 0x0f;
+
+		if(digit != 0 || started || shift == 0) {
+			bios_putchar(digits[digit]);
+			started = 1;
+		}
+		if(shift == 0)
+			break;
+		shift -= 4;
+	}
+}
+
+bool fs_check_super(void) {
+	bios_puts("Checking rootfs in B:...\n");
 	if(fs_read_rootfs_block(0,0x1000,(uint16_t)&buf) != 0) {
-		bios_puts("Failed to read superblock!\r\n");
+		bios_puts("Failed to read superblock!\n");
+		return false;
 	}
 
 	if( (buf[0] != 'M') || (buf[1] != 'A') || (buf[2] != 'T') || (buf[3] != '1') || (buf[4] != '6') ) {
-		bios_puts("Bad signature on superblock!\r\n");
+		bios_puts("Bad signature on superblock!\n");
+		return false;
 	}
 
-	bios_puts("Found a valid Matrix16 filesystem in B:\r\n");
+	if( (buf[5] != '\0') || (buf[6] != '\0') || (buf[7] != '\0') ) {
+		bios_puts("Bad padding bytes on superblock!\n");
+		return false;
+	}
+
+	uint16_t* dir_start   = (uint16_t*)&(buf[8]);
+	uint16_t* dir_sectors = (uint16_t*)&(buf[10]);
+
+	bios_puts("Found a valid Matrix16 filesystem superblock in B:\n");
+
+	bios_puts("\tdir_start: ");
+	bios_put_decimal(*dir_start);
+	bios_puts(", dir_sectors: ");
+	bios_put_decimal(*dir_sectors);
+	bios_puts("\n");
+	return true;
 }
 
 
 void kernel_main(void) {
-	bios_puts("\r\n");
-	bios_puts("\r\nMatrix16 Kernel loaded!\r\n");
-	bios_puts("\r\n");
+	bios_puts("Matrix16 Kernel loaded!\n\n");
 
 	install_isr08();
 	install_isr80();
 
-	fs_check_super();
+	if(fs_check_super()) {
+		bios_puts("Attempting to mount rootfs...\n");
+	}
 
 	for(;;);
 }
