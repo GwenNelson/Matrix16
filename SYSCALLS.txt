@@ -1,0 +1,13 @@
+SYS_WRITE
+
+AX=1
+BX=handle
+CX=buffer
+DX=length
+
+INT 80h
+
+handle 1 is stdout
+
+no other handles exist yet
+
