@@ -2,6 +2,10 @@ BITS 16
 ORG 0
 
 start:
+	; setup our segments first
+	mov ax,cs
+	mov ds,ax
+
     mov ax, 1              ; SYS_WRITE
     mov bx, 1              ; stdout
     mov cx, message

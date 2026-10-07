@@ -76,11 +76,44 @@ extern void install_isr80(void);
 
 char buf[512];
 
+
+static inline void __far *
+mk_farptr(uint16_t segment, uint16_t offset)
+{
+    union {
+        struct {
+            uint16_t offset;
+            uint16_t segment;
+        } parts;
+        void __far *ptr;
+    } u;
+
+    u.parts.offset = offset;
+    u.parts.segment = segment;
+    return u.ptr;
+}
 void k_timer_callback(void) {
+}
+
+
+
+#define SYS_WRITE 1
+
+void k_syscall_sys_write(registers_t *regs) {
+	if(regs->bx != 1) {
+		kpanic("Attempted SYS_WRITE to unknown handle!"); // Probably want a generic error handler for user programs instead of always kpanic
+	}
+	char __far *buf = mk_farptr(regs->ds,regs->cx);
+	for(int i=0; i < regs->dx; i++) {
+		bios_putchar(buf[i]);
+	}
 }
 
 void k_syscall_callback(registers_t *regs) {
 	switch(regs->ax) {
+		case SYS_WRITE:
+			k_syscall_sys_write(regs);
+		break;
 		default:
 			kpanic("Unknown syscall");
 		break;
