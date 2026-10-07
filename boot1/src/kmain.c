@@ -27,7 +27,7 @@ typedef enum task_state_t {
 	FROZEN  = 2,
 } task_state_t;
 
-struct task_context_t {
+typedef struct task_context_t {
     uint16_t ax, bx, cx, dx;
     uint16_t si, di, bp;
     uint16_t sp, ip, flags;
