@@ -21,11 +21,31 @@ typedef struct rootfs_dir_t {
 	char name[26];
 } __attribute__((packed)) rootfs_dir_t;
 
+typedef enum task_state_t {
+	LOADED  = 0,
+	RUNNING = 1,
+	FROZEN  = 2,
+} task_state_t;
+
+typedef struct task_t {
+	uint16_t     segment;
+	uint16_t     sp;
+	uint16_t     flags;
+	task_state_t state;
+} task_t;
+
+typedef struct console_t {
+	uint8_t bios_page_no;
+	uint16_t
+} console_t;
+
 extern uint16_t bios_read_sector(uint16_t es, uint16_t bx, uint16_t cylinder, uint16_t head, uint16_t sector, uint16_t drive);
 
-static void bios_putchar(char c) {
+static uint8_t cur_page_no = 0;
+
+static void bios_putchar(char c, uint8_t page_no) {
 	uint16_t ax = 0x0e00 | (uint8_t)c;
-	uint16_t bx = 0x0000;
+	uint16_t bx = 0x0000 | page_no;
 	__asm__ volatile (
         	"int $0x10"
 	        : "+a" (ax),
@@ -35,18 +55,28 @@ static void bios_putchar(char c) {
 	);
 }
 
+static void bios_swap_page(uint8_t new_page) {
+	uint16_t ax = 0x0500 | new_page;
+	__asm__ volatile (
+		"int $0x10"
+		: "+a" (ax)
+		:
+		: "cc"
+	);
+}
+
 static void bios_puts(char* s) {
 	while(*s) {
 		switch(*s) {
 			case '\t':
-				for(int i=0; i<8; i++) bios_putchar(' ');
+				for(int i=0; i<8; i++) bios_putchar(' ',cur_page_no);
 			break;
 			case '\n':
-				bios_putchar('\r');
-				bios_putchar('\n');
+				bios_putchar('\r',cur_page_no);
+				bios_putchar('\n',cur_page_no);
 			break;
 			default:
-				bios_putchar(*s);
+				bios_putchar(*s, cur_page_no);
 			break;
 		}
 
@@ -105,7 +135,7 @@ void k_syscall_sys_write(registers_t *regs) {
 	}
 	char __far *buf = mk_farptr(regs->ds,regs->cx);
 	for(int i=0; i < regs->dx; i++) {
-		bios_putchar(buf[i]);
+		bios_putchar(buf[i],cur_page_no); // TODO - should check what page no the task is assigned
 	}
 }
 
@@ -138,7 +168,7 @@ static void bios_put_decimal(uint16_t n) {
 	} while(n != 0);
 
 	while(count != 0) {
-		bios_putchar(digits[--count]);
+		bios_putchar(digits[--count],cur_page_no);
 	}
 }
 
@@ -152,7 +182,7 @@ static void bios_put_hex(uint16_t n) {
 		uint8_t digit = (n >> shift) & 0x0f;
 
 		if(digit != 0 || started || shift == 0) {
-			bios_putchar(digits[digit]);
+			bios_putchar(digits[digit],cur_page_no);
 			started = 1;
 		}
 		if(shift == 0)
