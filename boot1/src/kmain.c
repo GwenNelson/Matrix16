@@ -23,16 +23,6 @@ typedef struct rootfs_dir_t {
 
 extern uint16_t bios_read_sector(uint16_t es, uint16_t bx, uint16_t cylinder, uint16_t head, uint16_t sector, uint16_t drive);
 
-static void lba2chs(uint16_t lba, uint16_t *cylinder, uint16_t *head, uint16_t *sector) {
-	// this is a dumb quick hack, but it works
-	*cylinder = lba / 18;
-	*head     = (lba % 18) / 9;
-	*sector   = (lba % 9) + 1;
-}
-
-extern void install_isr08(void);
-extern void install_isr80(void);
-
 static void bios_putchar(char c) {
 	uint16_t ax = 0x0e00 | (uint8_t)c;
 	uint16_t bx = 0x0000;
@@ -64,12 +54,37 @@ static void bios_puts(char* s) {
 	}
 }
 
+
+
+void kpanic(char* msg) {
+	bios_puts("Kernal panic!\n");
+	bios_puts("\tREASON: "); bios_puts(msg); bios_puts("\n");
+	bios_puts("\n\n");
+	bios_puts("IT IS IMPOSSIBLE TO CONTINUE, SYSTEM HALTING\n");
+	for(;;) asm("cli; hlt");
+}
+
+static void lba2chs(uint16_t lba, uint16_t *cylinder, uint16_t *head, uint16_t *sector) {
+	// this is a dumb quick hack, but it works
+	*cylinder = lba / 18;
+	*head     = (lba % 18) / 9;
+	*sector   = (lba % 9) + 1;
+}
+
+extern void install_isr08(void);
+extern void install_isr80(void);
+
 char buf[512];
 
 void k_timer_callback(void) {
 }
 
 void k_syscall_callback(registers_t *regs) {
+	switch(regs->ax) {
+		default:
+			kpanic("Unknown syscall");
+		break;
+	}
 }
 
 uint16_t fs_read_rootfs_block(uint16_t lba, uint16_t es, uint16_t bx) {
@@ -219,7 +234,7 @@ static char *strcpy(char *dest, const char *src) {
 }
 
 bool fs_locate_file(char* name, uint16_t es, char* buf, uint16_t *len) {
-	if(name == 0 || buf == 0 || len == 0)
+	if(name == 0 || len == 0)
 		return false;
 
 	for(uint16_t i = 0; i < 16; i++) {
@@ -296,6 +311,20 @@ void load_system_cfg(void) {
 	}
 }
 
+
+
+// the shell is configured to run at 2000:0000 - that is, the very first task after the kernel itself
+void load_default_shell() {
+	uint16_t shell_len;
+	if(!fs_locate_file(system_cfg_shell,0x2000,(char*)0x0000, &shell_len)) {
+		kpanic("MISSING SHELL!");
+	}
+	// if we get here, yay! it should be possible to just JMP to it
+	__asm__ volatile (
+	    "ljmp $0x2000, $0x0000"
+	);	
+}
+
 void kernel_main(void) {
 	bios_puts("Matrix16 Kernel loaded!\n\n");
 
@@ -316,6 +345,8 @@ void kernel_main(void) {
 	bios_puts("Starting configured shell B:");
 	bios_puts(system_cfg_shell);
 	bios_puts("...\n");
+
+	load_default_shell();
 
 	for(;;);
 }
