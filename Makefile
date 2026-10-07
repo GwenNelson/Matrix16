@@ -14,7 +14,7 @@ fsgen-clean:
 
 rootfs/SHELL.PRG: user/src/shell.asm
 	mkdir -p rootfs
-	$(NASM) -f bin $< -o $@
+	nasm -f bin $< -o $@
 
 rootfs.img: fsgen rootfs/SHELL.PRG
 	./fsgen/fsgen rootfs.img rootfs/
