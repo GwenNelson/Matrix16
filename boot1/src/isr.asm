@@ -50,7 +50,16 @@ install_isr08:
 	ret
 
 isr08_wrapper:
-	pusha
+	push ax
+	push cx
+	push dx
+	push bx
+	mov ax, sp
+	add ax, 8
+	push ax
+	push bp
+	push si
+	push di
 	push ds
 	push es
 
@@ -67,13 +76,29 @@ isr08_wrapper:
 
 	pop es
 	pop ds
-	popa
+	pop di
+	pop si
+	pop bp
+	add sp, 2
+	pop bx
+	pop dx
+	pop cx
+	pop ax
 
 	jmp far [cs:old_timer_off]
 	iret
 
 isr80_wrapper:
-	pusha
+	push ax
+	push cx
+	push dx
+	push bx
+	mov ax, sp
+	add ax, 8
+	push ax
+	push bp
+	push si
+	push di
 	push ds
 	push es
 
@@ -81,7 +106,8 @@ isr80_wrapper:
 	mov ds, ax
 	mov es, ax
 
-	push sp
+	mov ax, sp
+	push ax
 
 	call k_syscall_callback
 
@@ -89,5 +115,12 @@ isr80_wrapper:
 
 	pop es
 	pop ds
-	popa
+	pop di
+	pop si
+	pop bp
+	add sp, 2
+	pop bx
+	pop dx
+	pop cx
+	pop ax
 	iret

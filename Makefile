@@ -1,4 +1,6 @@
-.PHONY: boot1 boot1-clean fsgen fsgen-clean run
+.PHONY: all clean boot1 boot1-clean fsgen fsgen-clean run
+
+all:	boot1 rootfs.img
 
 boot1:
 	$(MAKE) -C boot1/
@@ -23,3 +25,6 @@ run: boot1 rootfs.img
 	qemu-system-i386 \
 		-drive file=boot1/build/matrix16.img,format=raw,if=floppy,index=0 \
 		-drive file=rootfs.img,format=raw,if=floppy,index=1
+
+clean: boot1-clean fsgen-clean
+	rm -f rootfs/SHELL.PRG
