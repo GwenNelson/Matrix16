@@ -1,3 +1,7 @@
+this file documents the intended specification for kconsole.c and kconsole.h
+
+for kconsole.h, use the "#pragma once" directive
+
 Matrix16 implements up to 4 virtual consoles using the hardware pages for fast switching:
 	VC0 = B800:0000
 	VC1 = B900:0000
@@ -14,6 +18,14 @@ GENERAL RULES:
 
 	DO NOT ADD ABSTRACTIONS YET FOR SERIAL
 		but keep it in mind - don't add anything that would make it impossible or extremely difficult to add serial console later
+
+	DO NOT ADD ANY CLEVER SYNC PRIMITIVES
+
+	REMEMBER THE TARGET PLATFORM IS 1980s HARDWARE - 8088 PROCESSOR WITH 512KB TOTAL RAM ON AVERAGE
+	
+	WE HAVE LIMITED RAM AVAILABLE FOR THE KERNEL AND THIS IS ONLY ONE PART OF THE KERNEL
+	
+	If you have to choose between two implementation approaches, prefer the approach that results in less memory use (including the code itself)
 
 RULES ON ANSI AND OTHER CLARIFICATION:
 	We only support a reduced subset of ANSI for now:
@@ -58,6 +70,18 @@ hardware LEDs:
 cursor coordinates:
 	use the BIOS to set the visible cursor location on active console
 	for background consoles, just update the console state
+
+		here is sample asm code for using the BIOS to update the cursor location, use it only for active console and when switching active console
+
+		mov ah, 02h     ; Set cursor position
+		mov bh, 0       ; Console/page number (0–3)
+		mov dh, 10      ; Row
+		mov dl, 20      ; Column
+		int 10h
+
+character echo:
+	DO NOT do this
+	typed characters should NOT automatically be echo'd back within kconsole.c
 
 NEVER EVER EVER invoke the BIOS from inside kconsole_cb_callback, or do anything else that is dangerous from within an ISR context, as this function is ultimately invoked from the IRQ1 ISR
 
@@ -116,3 +140,4 @@ kconsole.c requires these functions and data:
 	bool kconsole_getc(uint8_t page_num, char* out);
 		this sees if there's any characters waiting on the "stdin" buffer for that console, if so it writes to *out and returns true
 		otherwise it returns false
+		this is STRICTLY NON-BLOCKING - if there's nothing in the buffer, it immediately returns false
