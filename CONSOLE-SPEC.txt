@@ -54,7 +54,7 @@ kconsole.c requires these functions and data:
 		special cases:
 			if the user presses ctrl-alt-s, check if kb_save_cb is NULL, and if not then call that and do NOT append to the console's ringbuffer
 				however, normal ctrl-s should still go to the ringbuffer - the intention being that tasks can still handle ctrl-s themselves
-			if the user presses ctrl-alt-F1 through to ctrl-alt-F4, call kb_switch_cb (if not NULL) and pass the number 1-4 as the first param
+			if the user presses ctrl-alt-F1 through to ctrl-alt-F4, call kb_switch_cb (if not NULL) and pass the number 0-3 as the first param
 	bool kconsole_getc(uint8_t page_num, char* out);
 		this sees if there's any characters waiting on the "stdin" buffer for that console, if so it writes to *out and returns true
-		otherwise it returns true
+		otherwise it returns false
