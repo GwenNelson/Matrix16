@@ -4,9 +4,66 @@ Matrix16 implements up to 4 virtual consoles using the hardware pages for fast s
 	VC2 = BA00:0000
 	VC3 = BB00:0000
 
+GENERAL RULES:
+	keep everything as simple as possible
+	prefer code readability by humans to "cleverness"
+	use appropriate comments - not overly verbose, but enough for a typical C coder to understand
+	don't chain loads of operations on a single line of code unless that's the only way
+
+	DO NOT CALL THE BIOS ANYWHERE EXCEPT WHERE EXPLICITLY DOCUMENTED BELOW
+
+	DO NOT ADD ABSTRACTIONS YET FOR SERIAL
+		but keep it in mind - don't add anything that would make it impossible or extremely difficult to add serial console later
+
+RULES ON ANSI AND OTHER CLARIFICATION:
+	We only support a reduced subset of ANSI for now:
+		cursor movement
+		clear screen
+		clear line
+		basic colours
+		and enough for tasks to be able to read standard arrow keys and home/del/backspace etc
+
+	standard ctrl-s should produce ASCII 0x13
+	backspace should produce \b
+	enter should produce only \n (not \r or \r\n)
+	arrow keys should produce standard escape sequences
+		only enque on key press
+	for sequences being written to ringbuffer, always ensure the ringbuffer has sufficient space for ALL the needed bytes before enqueuing, otherwise drop the input
+	ANSI state should be local per-console, not global
+	
+ring buffers:
+	keep the ring buffer very very simple
+	it should have 256 bytes per console
+	remember, ANSI sequences and anything else multi-byte must be written all together or dropped - no partial sequences
+
+caps lock and num lock:
+	caps lock:
+		on press only (ignore release), toggle a boolean in the active console's state and change any letters coming into that console to uppercase if it's active
+		on press, immediately set the hardware LED
+		on console switch, check the boolean of the new console, and update the LED
+	num lock:
+		on press only (ignore release), as with caps lock, toggle a boolean in the active console's state, use it to appropriately determine whether numpad gives direction or numeric
+		as with caps lock, set hardware LED, and ensure console switch updates the LED correctly too
+	ignore scroll lock entirely for now
+	ignore typematic rate for caps lock of course
+	modifier keys like ctrl,alt,shift should be global
+	keep track of whether caps or num lock is physically held and don't allow it to autorepeat
+
+hardware LEDs:
+	do this from 1 or 2 central functions that can be trivially stubbed out or disabled with a simple comment out if needed (for example, if the intended target doesn't support it)
+	in fact, for now - please simply provide a means to set the hardware LED state in the global struct, and have the hardware LED change when switching console
+		DO NOT do it within kconsole_kb_callback - just update the global struct, and set the LEDs when switching console only
+		it is okay for now if this means they will be out of sync at first
+
+cursor coordinates:
+	use the BIOS to set the visible cursor location on active console
+	for background consoles, just update the console state
+
+NEVER EVER EVER invoke the BIOS from inside kconsole_cb_callback, or do anything else that is dangerous from within an ISR context, as this function is ultimately invoked from the IRQ1 ISR
+
 kconsole.c requires these functions and data:
 
-	static console_state_t[4]
+	static console_state_t consoles[4]
 		precise fields can be defined as needed to implement the API
 		ignore the existing console_state_t struct in kmain.c for now - pretend no structs or datatypes in kmain.c exist
 		use stdint.h for the integer types
@@ -28,6 +85,7 @@ kconsole.c requires these functions and data:
 		this function will use a lookup table to find the address of that page in VRAM
 		then it'll clear that page
 		a global console_state_t struct will then store the current cursor position (initialized to 0,0) for that page
+		this should do nothing if sent an invalid console number
 	void kconsole_set_save_cb(void (*callback)(void));
 		this is used to assign the kb_save_cb function pointer
 	void kconsole_set_switch_cb(void (*callback)(uint8_t console_num));
