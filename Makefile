@@ -12,7 +12,11 @@ fsgen:
 fsgen-clean:
 	$(MAKE) -C fsgen/ clean
 
-rootfs.img: fsgen
+rootfs/SHELL.PRG: user/src/shell.asm
+	mkdir -p rootfs
+	$(NASM) -f bin $< -o $@
+
+rootfs.img: fsgen rootfs/SHELL.PRG
 	./fsgen/fsgen rootfs.img rootfs/
 
 run: boot1 rootfs.img

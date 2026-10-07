@@ -14,6 +14,13 @@ typedef struct registers_t {
     uint16_t ax;       // Bottom of pusha (lowest memory address)
 } __attribute__((packed)) registers_t;
 
+typedef struct rootfs_dir_t {
+	uint16_t start_lba;
+	uint16_t end_lba;
+	uint16_t size;
+	char name[26];
+} __attribute__((packed)) rootfs_dir_t;
+
 extern uint16_t bios_read_sector(uint16_t es, uint16_t bx, uint16_t cylinder, uint16_t head, uint16_t sector, uint16_t drive);
 
 static void lba2chs(uint16_t lba, uint16_t *cylinder, uint16_t *head, uint16_t *sector) {
@@ -106,6 +113,27 @@ static void bios_put_hex(uint16_t n) {
 	}
 }
 
+
+bool fs_mount_rootdir(uint16_t start, uint16_t sec_count) {
+	if(fs_read_rootfs_block(start,0x1000,(uint16_t)&buf) != 0) {
+		bios_puts("Failed to read rootdir!\n");
+		return false;
+	}
+	rootfs_dir_t* dir_buf = (rootfs_dir_t*)buf;
+	int i=0;
+	for(i=0; i<16; i++) {
+		if(dir_buf[i].name[0] != '\0') {
+			bios_puts("\t Found file: ");
+			bios_puts(dir_buf[i].name);  // I know this is shitty code, i should use a memcpy or something, stfu
+			bios_puts("\n");
+		}
+	}
+
+}
+
+static uint16_t rootfs_dir_start;
+static uint16_t rootfs_dir_sectors;
+
 bool fs_check_super(void) {
 	bios_puts("Checking rootfs in B:...\n");
 	if(fs_read_rootfs_block(0,0x1000,(uint16_t)&buf) != 0) {
@@ -133,9 +161,11 @@ bool fs_check_super(void) {
 	bios_puts(", dir_sectors: ");
 	bios_put_decimal(*dir_sectors);
 	bios_puts("\n");
+
+	rootfs_dir_start   = *dir_start;
+	rootfs_dir_sectors = *dir_sectors;
 	return true;
 }
-
 
 void kernel_main(void) {
 	bios_puts("Matrix16 Kernel loaded!\n\n");
@@ -145,6 +175,7 @@ void kernel_main(void) {
 
 	if(fs_check_super()) {
 		bios_puts("Attempting to mount rootfs...\n");
+		(void)fs_mount_rootdir(rootfs_dir_start,rootfs_dir_sectors);
 	}
 
 	for(;;);
