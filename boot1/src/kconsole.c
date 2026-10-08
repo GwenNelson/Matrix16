@@ -209,8 +209,8 @@ static void ansi_command(uint8_t page_num, char command) {
 			break;
 		case 'H':
 		case 'f':
-			row = amount - 1;
-			col = console->params[1] ? console->params[1] - 1 : 0;
+			row = (console->params[0] ? console->params[0] : 1) - 1;
+			col = (console->params[1] ? console->params[1] : 1) - 1;
 			break;
 		case 'J':
 			switch(console->params[0]) {
