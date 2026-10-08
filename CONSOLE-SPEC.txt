@@ -95,7 +95,7 @@ kconsole.c requires these functions and data:
 
 	static uint8_t active_console;
 
-	static void (*kb_save_cb)(void);
+	static void (*kb_save_cb)(uint8_t console_num);
 		this is a function pointer for the save menu callback - to be invoked by kconsole if not NULL and the user presses ctrl-alt-s
 	static void (*kb_switch_cb)(uint8_t console_num);
 		this is a function pointer for the switch console callback - to be invoked by kconsole if not NULL and the user presses ctrl-alt-F1 through to ctrl-alt-F4

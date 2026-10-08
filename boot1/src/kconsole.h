@@ -12,7 +12,7 @@ enum {
 
 /* Initialize pages before enabling keyboard input. Uses 80x25 color text mode. */
 void kconsole_init(uint8_t page_num);
-void kconsole_set_save_cb(void (*callback)(void));
+void kconsole_set_save_cb(void (*callback)(uint8_t console_num));
 void kconsole_set_switch_cb(void (*callback)(uint8_t console_num));
 
 /* These functions may call the BIOS for the visible page: use outside ISRs.

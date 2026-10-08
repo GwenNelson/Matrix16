@@ -31,7 +31,7 @@ typedef struct console_state_t {
 
 static console_state_t consoles[CONSOLE_COUNT];
 static uint8_t active_console;
-static void (*kb_save_cb)(void);
+static void (*kb_save_cb)(uint8_t console_num);
 static void (*kb_switch_cb)(uint8_t console_num);
 
 /* Modifiers describe the physical keyboard, locks belong to each console. */
@@ -150,7 +150,7 @@ void kconsole_init(uint8_t page_num) {
 	}
 }
 
-void kconsole_set_save_cb(void (*callback)(void)) {
+void kconsole_set_save_cb(void (*callback)(uint8_t console_num)) {
 	kb_save_cb = callback;
 }
 
@@ -461,7 +461,7 @@ void kconsole_kb_callback(uint8_t scancode) {
 		return;
 	if(!extended && keyboard.ctrl && keyboard.alt) {
 		if(code == 0x1f && kb_save_cb != 0) {
-			kb_save_cb();
+			kb_save_cb(active_console);
 			return;
 		}
 		if(code >= 0x3b && code <= 0x3e) {
