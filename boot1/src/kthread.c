@@ -9,11 +9,14 @@ static kthread_t threads[7]; // statically allocated, because we're targeting a 
 
 #define KIDLE_STACK_LEN 512
 #define KEVENT_STACK_LEN 2048
+#define USER_TEST_STACK_LEN 1024
 
 extern void switch_to(uint16_t ss, uint16_t sp); // ASM routine we use for switching
 
 static uint8_t kidle_stack[512]   __attribute__((aligned(2))); // 512 bytes ought to be enough for anyone...
 static uint8_t kevent_stack[2048] __attribute__((aligned(2))); // need something a bit bigger for kevent thread
+
+static uint8_t kuser_test_stack[4][USER_TEST_STACK_LEN] __attribute__((aligned(2)));
 
 static void kidle_task(void) {
 	for(;;) {
@@ -22,11 +25,82 @@ static void kidle_task(void) {
 }
 
 static void kevent_task(void) {
-	for(;;) asm("hlt"); // for now, it does nothing
+	for(;;) {
+		kthread_yield();
+		asm("hlt"); // the PIT is still too slow for responsive scheduling
+	}
 }
 
 static bool scheduler_ready    = false;              // guard against scheduling too early
 static kthread_id_t cur_thread = KTHREAD_INVALID_ID; // set to something invalid, obviously
+
+void test_task0(void) {
+	kconsole_init(PAGENUM_VC0);
+	kconsole_switchto(PAGENUM_VC0);
+	kconsole_puts(PAGENUM_VC0, "console 0");
+
+	for(;;) {
+		kconsole_move_cursor(PAGENUM_VC0, 2, 1);
+		kconsole_putc(PAGENUM_VC0, '-');
+		kconsole_move_cursor(PAGENUM_VC0, 2, 1);
+		kconsole_putc(PAGENUM_VC0, '\\');
+		kconsole_move_cursor(PAGENUM_VC0, 2, 1);
+		kconsole_putc(PAGENUM_VC0, '|');
+		kconsole_move_cursor(PAGENUM_VC0, 2, 1);
+		kconsole_putc(PAGENUM_VC0, '/');
+	}
+}
+
+void test_task1(void) {
+	kconsole_init(PAGENUM_VC1);
+	kconsole_switchto(PAGENUM_VC1);
+	kconsole_puts(PAGENUM_VC1, "console 1");
+
+	for(;;) {
+		kconsole_move_cursor(PAGENUM_VC1, 2, 1);
+		kconsole_putc(PAGENUM_VC1, '-');
+		kconsole_move_cursor(PAGENUM_VC1, 2, 1);
+		kconsole_putc(PAGENUM_VC1, '\\');
+		kconsole_move_cursor(PAGENUM_VC1, 2, 1);
+		kconsole_putc(PAGENUM_VC1, '|');
+		kconsole_move_cursor(PAGENUM_VC1, 2, 1);
+		kconsole_putc(PAGENUM_VC1, '/');
+	}
+}
+
+void test_task2(void) {
+	kconsole_init(PAGENUM_VC2);
+	kconsole_switchto(PAGENUM_VC2);
+	kconsole_puts(PAGENUM_VC2, "console 2");
+
+	for(;;) {
+		kconsole_move_cursor(PAGENUM_VC2, 2, 1);
+		kconsole_putc(PAGENUM_VC2, '-');
+		kconsole_move_cursor(PAGENUM_VC2, 2, 1);
+		kconsole_putc(PAGENUM_VC2, '\\');
+		kconsole_move_cursor(PAGENUM_VC2, 2, 1);
+		kconsole_putc(PAGENUM_VC2, '|');
+		kconsole_move_cursor(PAGENUM_VC2, 2, 1);
+		kconsole_putc(PAGENUM_VC2, '/');
+	}
+}
+
+void test_task3(void) {
+	kconsole_init(PAGENUM_VC3);
+	kconsole_switchto(PAGENUM_VC3);
+	kconsole_puts(PAGENUM_VC3, "console 3");
+
+	for(;;) {
+		kconsole_move_cursor(PAGENUM_VC3, 2, 1);
+		kconsole_putc(PAGENUM_VC3, '-');
+		kconsole_move_cursor(PAGENUM_VC3, 2, 1);
+		kconsole_putc(PAGENUM_VC3, '\\');
+		kconsole_move_cursor(PAGENUM_VC3, 2, 1);
+		kconsole_putc(PAGENUM_VC3, '|');
+		kconsole_move_cursor(PAGENUM_VC3, 2, 1);
+		kconsole_putc(PAGENUM_VC3, '/');
+	}
+}
 
 void kthread_init(void) {
 	// let's first setup the idle thread
@@ -34,17 +108,20 @@ void kthread_init(void) {
 
 	// and let's also setup our event thread
 	kthread_setup(KTHREAD_EVENT_ID,SEG_KERN,&kevent_task,(uint16_t)(&kevent_stack[KEVENT_STACK_LEN-2]));
+
+	// for now, testing, let's setup the "user" tasks as just kernel threads
+	kthread_setup(KTHREAD_USER_TSK0_ID, SEG_KERN, &test_task0,
+		(uint16_t)(&kuser_test_stack[0][USER_TEST_STACK_LEN - 2]));
+	kthread_setup(KTHREAD_USER_TSK1_ID, SEG_KERN, &test_task1,
+		(uint16_t)(&kuser_test_stack[1][USER_TEST_STACK_LEN - 2]));
+	kthread_setup(KTHREAD_USER_TSK2_ID, SEG_KERN, &test_task2,
+		(uint16_t)(&kuser_test_stack[2][USER_TEST_STACK_LEN - 2]));
+	kthread_setup(KTHREAD_USER_TSK3_ID, SEG_KERN, &test_task3,
+		(uint16_t)(&kuser_test_stack[3][USER_TEST_STACK_LEN - 2]));
+
 }
 
-void test_task0(void) {
-	// CODEX BEGIN
-	// i want this function to use the routines in kconsole.h to the following:
-	// 1 - on entry, kconsole_init(PAGENUM_VC0);
-	// 2 - kconsole_switchto(PAGENUM_VC0);
-	// 3 - display the string "console 0" using kconsole_putc - you may put a simple helper function named kconsole_puts() into kconsole.c and kconsole.h for this purpose, it should take the page num and a char*
-	// 4 - do a simple loop using kconsole_move_cursor(PAGENUM_VC0,2,1) and kconsole_putc() to render a simple spinner in the corner of the screen going through these characters: -,\,|,/
-	// CODEX END
-}
+
 
 void kthread_start(void) {
 	scheduler_ready = true;
@@ -98,18 +175,63 @@ int kthread_setup(kthread_id_t id, uint16_t seg, kthread_entry_t entry, uint16_t
 }
 
 void kthread_yield(void) {
+	kthread_schedule();
 }
 
 void kthread_block(kthread_id_t id) {
+	if(id > KTHREAD_MAX_ID)
+		return;
+
+	__asm__ volatile ("pushf; cli" ::: "memory");
+	threads[id].state = KTHREAD_BLOCKED;
+
+	if(id == cur_thread) {
+		kthread_yield();
+		return;
+	}
+
+	__asm__ volatile ("popf" ::: "memory");
 }
 
 void kthread_wake(kthread_id_t id) {
-	(void)id;
+	if(id > KTHREAD_MAX_ID)
+		return;
+
+	__asm__ volatile ("pushf; cli" ::: "memory");
+	if(threads[id].state == KTHREAD_BLOCKED)
+		threads[id].state = KTHREAD_READY;
+	__asm__ volatile ("popf" ::: "memory");
 }
 
 void kthread_exit(kthread_id_t id) {
 }
 
 void kthread_schedule(void) {
-	
+	if(!scheduler_ready)
+		return;
+
+	kthread_id_t candidate;
+	kthread_id_t first;
+	if(cur_thread == KTHREAD_INVALID_ID) {
+		first = KTHREAD_EVENT_ID;
+	} else {
+		first = cur_thread + 1;
+		if(first > KTHREAD_MAX_ID)
+			first = KTHREAD_EVENT_ID;
+	}
+
+	candidate = first;
+	for(uint8_t checked = 0; checked < KTHREAD_MAX_ID; checked++) {
+		if(threads[candidate].state == KTHREAD_READY)
+			break;
+		candidate++;
+		if(candidate > KTHREAD_MAX_ID)
+			candidate = KTHREAD_EVENT_ID;
+	}
+
+	if(threads[candidate].state != KTHREAD_READY)
+		candidate = KTHREAD_IDLE_ID;
+
+	cur_thread = candidate;
+	switch_to(threads[candidate].ss, threads[candidate].sp);
 }

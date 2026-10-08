@@ -331,6 +331,11 @@ void kconsole_putc(uint8_t page_num, char c) {
 	}
 }
 
+void kconsole_puts(uint8_t page_num, char *string) {
+	while(*string)
+		kconsole_putc(page_num, *string++);
+}
+
 /* One IRQ producer and one foreground consumer. Publish the head only once
  * the whole sequence is stored. The counters permit all 256 bytes to be used. */
 static void enqueue(const char *bytes, uint8_t length) {

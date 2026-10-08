@@ -20,6 +20,7 @@ void kconsole_set_switch_cb(void (*callback)(uint8_t console_num));
 void kconsole_switchto(uint8_t page_num);
 void kconsole_move_cursor(uint8_t page_num, uint8_t row, uint8_t col);
 void kconsole_putc(uint8_t page_num, char c);
+void kconsole_puts(uint8_t page_num, char *string);
 
 /* XT set 1, US layout. Registered callbacks run here in IRQ context: they must
  * defer BIOS calls, console switching, disk access, and other blocking work. */

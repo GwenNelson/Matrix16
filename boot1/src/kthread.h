@@ -20,6 +20,8 @@ typedef struct kthread_t {
 
 } kthread_t;
 
+#define KTHREAD_MAX_ID 6
+
 #define KTHREAD_IDLE_ID      0
 #define KTHREAD_EVENT_ID     1
 #define KTHREAD_USER_TSK0_ID 2
