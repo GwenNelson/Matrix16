@@ -1,5 +1,7 @@
 #include <stdint.h>
 #include <stdbool.h>
+#include "kthread.h"
+
 
 typedef struct registers_t {
     uint16_t es;       // Top of stack after segment push
@@ -127,6 +129,7 @@ mk_farptr(uint16_t segment, uint16_t offset)
     return u.ptr;
 }
 void k_timer_callback(void) {
+	kthread_schedule();
 }
 
 
@@ -401,7 +404,15 @@ void kernel_main(void) {
 	install_isr08();
 	install_isr80();
 
-	bool got_rootfs = false;
+	// we'll come back to the below after rethinking the filesystem etc, for now just want to test the threading and VCs work
+
+	bios_puts("Starting up kthread...\n");
+	kthread_init();
+	bios_puts("Should be ready to start schedule...\n");
+	kthread_start();
+	kpanic("Something went wrong!");
+
+	/*bool got_rootfs = false;
 
 	if(fs_check_super()) {
 		bios_puts("Attempting to mount rootfs...\n");
@@ -416,7 +427,7 @@ void kernel_main(void) {
 	bios_puts(system_cfg_shell);
 	bios_puts("...\n");
 
-	load_default_shell();
+	load_default_shell();*/
 
 	for(;;);
 }
