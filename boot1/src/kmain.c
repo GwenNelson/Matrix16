@@ -108,6 +108,7 @@ static void lba2chs(uint16_t lba, uint16_t *cylinder, uint16_t *head, uint16_t *
 }
 
 extern void install_isr08(void);
+extern void install_isr09(void);
 extern void install_isr80(void);
 
 char buf[512];
@@ -402,6 +403,7 @@ void kernel_main(void) {
 	bios_puts("Matrix16 Kernel loaded!\n\n");
 
 	install_isr08();
+	install_isr09();
 	install_isr80();
 
 	// we'll come back to the below after rethinking the filesystem etc, for now just want to test the threading and VCs work

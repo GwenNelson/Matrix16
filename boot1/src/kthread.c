@@ -11,7 +11,8 @@ static kthread_t threads[7]; // statically allocated, because we're targeting a 
 #define KEVENT_STACK_LEN 2048
 #define USER_TEST_STACK_LEN 1024
 
-extern void switch_to(uint16_t ss, uint16_t sp); // ASM routine we use for switching
+extern void switch_to(uint16_t ss, uint16_t sp, uint16_t *old_ss,
+	uint16_t *old_sp, uint16_t first_run); // ASM routine we use for switching
 
 static uint8_t kidle_stack[512]   __attribute__((aligned(2))); // 512 bytes ought to be enough for anyone...
 static uint8_t kevent_stack[2048] __attribute__((aligned(2))); // need something a bit bigger for kevent thread
@@ -210,12 +211,21 @@ void kthread_schedule(void) {
 	if(!scheduler_ready)
 		return;
 
+	uint16_t irq_flags;
+	__asm__ volatile ("pushf; popw %0; cli" : "=r" (irq_flags) : : "memory");
+
+	static bool started[KTHREAD_MAX_ID + 1];
+	kthread_id_t previous = cur_thread;
+	if(previous != KTHREAD_INVALID_ID &&
+	   threads[previous].state == KTHREAD_RUNNING)
+		threads[previous].state = KTHREAD_READY;
+
 	kthread_id_t candidate;
 	kthread_id_t first;
-	if(cur_thread == KTHREAD_INVALID_ID) {
+	if(previous == KTHREAD_INVALID_ID) {
 		first = KTHREAD_EVENT_ID;
 	} else {
-		first = cur_thread + 1;
+		first = previous + 1;
 		if(first > KTHREAD_MAX_ID)
 			first = KTHREAD_EVENT_ID;
 	}
@@ -232,6 +242,18 @@ void kthread_schedule(void) {
 	if(threads[candidate].state != KTHREAD_READY)
 		candidate = KTHREAD_IDLE_ID;
 
+	threads[candidate].state = KTHREAD_RUNNING;
+	if(candidate == previous) {
+		__asm__ volatile ("pushw %0; popf" : : "r" (irq_flags) : "memory", "cc");
+		return;
+	}
+
+	uint16_t first_run = !started[candidate];
+	started[candidate] = true;
 	cur_thread = candidate;
-	switch_to(threads[candidate].ss, threads[candidate].sp);
+	switch_to(threads[candidate].ss, threads[candidate].sp,
+		previous == KTHREAD_INVALID_ID ? 0 : &threads[previous].ss,
+		previous == KTHREAD_INVALID_ID ? 0 : &threads[previous].sp,
+		first_run);
+	__asm__ volatile ("pushw %0; popf" : : "r" (irq_flags) : "memory", "cc");
 }
