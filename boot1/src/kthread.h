@@ -2,6 +2,15 @@
 
 #include <stdint.h>
 
+/* Keep the saved flags in C storage so each asm block leaves SP balanced. */
+#define kthread_critical_enter(flags) do { \
+    __asm__ volatile ("pushf; popw %0; cli" : "=r" (flags) : : "memory"); \
+} while (0)
+
+#define kthread_critical_exit(flags) do { \
+    __asm__ volatile ("pushw %0; popf" : : "r" (flags) : "memory", "cc"); \
+} while (0)
+
 typedef uint8_t kthread_id_t;
 
 typedef enum kthread_state_t {
@@ -51,6 +60,5 @@ void kthread_exit(kthread_id_t id);
 
 /* Called by the timer interrupt stub */
 void kthread_schedule(void);
-
 
 

@@ -25,10 +25,26 @@ static void kidle_task(void) {
 	}
 }
 
+static volatile bool    pending_console_switch = false;
+static volatile uint8_t pending_console_pagenum = 0;
+
 static void kevent_task(void) {
 	for(;;) {
-		kthread_yield();
-		asm("hlt"); // the PIT is still too slow for responsive scheduling
+		uint16_t irq_flags;
+		kthread_critical_enter(irq_flags);
+		
+		bool need_switch = pending_console_switch;
+		uint8_t new_pagenum = pending_console_pagenum;
+		
+		if(need_switch) pending_console_switch = false;
+		
+		kthread_critical_exit(irq_flags);
+
+		if(need_switch) {
+			kconsole_switchto(new_pagenum);
+		} else {
+			kthread_yield();
+		}
 	}
 }
 
@@ -103,11 +119,17 @@ void test_task3(void) {
 	}
 }
 
+void kevent_kbd_cb(uint8_t page_num) {
+	pending_console_switch  = true;
+	pending_console_pagenum = page_num;
+}
+
 void kthread_init(void) {
 	// let's first setup the idle thread
 	kthread_setup(KTHREAD_IDLE_ID, SEG_KERN,&kidle_task, (uint16_t)(&kidle_stack[KIDLE_STACK_LEN-2]));
 
 	// and let's also setup our event thread
+	kconsole_set_switch_cb(&kevent_kbd_cb);
 	kthread_setup(KTHREAD_EVENT_ID,SEG_KERN,&kevent_task,(uint16_t)(&kevent_stack[KEVENT_STACK_LEN-2]));
 
 	// for now, testing, let's setup the "user" tasks as just kernel threads
@@ -183,15 +205,14 @@ void kthread_block(kthread_id_t id) {
 	if(id > KTHREAD_MAX_ID)
 		return;
 
-	__asm__ volatile ("pushf; cli" ::: "memory");
+	uint16_t irq_flags;
+	kthread_critical_enter(irq_flags);
 	threads[id].state = KTHREAD_BLOCKED;
 
-	if(id == cur_thread) {
+	if(id == cur_thread)
 		kthread_yield();
-		return;
-	}
 
-	__asm__ volatile ("popf" ::: "memory");
+	kthread_critical_exit(irq_flags);
 }
 
 void kthread_wake(kthread_id_t id) {
