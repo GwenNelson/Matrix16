@@ -1,0 +1,43 @@
+Basic concept:
+	A retro OS for late 80s PC hardware - target hardware is the amstrac PC1512 with 512KB RAM and two floppies
+	Multitasking with 4 virtual consoles + potentially one serial console
+
+Task slots:
+	There are 5 slots (for now)
+	Slot 0 is the kernel itself, loaded into segment 1000h by the bootloader
+	Slots 1-4 are user tasks
+
+Virtual consoles:
+	4 virtual consoles activated using ctrl-alt-F1 through to ctrl-alt-F4
+
+Task templates:
+	A task template is a compressed memory dump and register state loaded from disk
+	A task template can be loaded into any of the 1-4 user task slots - representing the 4 user consoles
+	When the user hits ctrl-alt-S, the kernel suspends whatever task is on that virtual console and displays a menu:
+		Save task
+			Serializes the task to disk as a new template
+		Save data
+			Serializes only parts of memory the user program marked as dynamic state (for example, the edit buffer of a text editor)
+		Load task
+			Loads a new task from disk, replacing this one
+		Save all tasks
+			Saves all tasks to disk
+		Load tasks
+			Loads multiple tasks from a task container (a file containing >1 tasks serialized to disk)
+		Terminate task
+			Terminates the task - just stops the task, resets to the default task (shell)
+
+The shell
+	Default user task1
+
+Boot floppy
+	A boot floppy is just a floppy containing a kernel image and filesystem metadata saying it's bootable
+	Once the kernel is resident, the boot floppy can be removed
+
+Filesystem
+	The filesystem represents files as chains of blocks - a block is 512 bytes (1 sector), the name can be 25 characters long (this might be changed)
+	For defrag:
+		Defrag tool asks the user to terminate sufficient tasks to free up enough memory (usually this just means closing all tasks, avoiding potential filesystem access too)
+		Entire disk is read into memory and written back out, with a warning not to shutdown - user can optionally insert a different floppy if desired
+	Task templates take a maximum of 128 blocks (plus metadata stored in reserved filesystem blocks)
+	This allows 5 entire tasks, plus 80 reserved blocks - though reserved blocks may change
