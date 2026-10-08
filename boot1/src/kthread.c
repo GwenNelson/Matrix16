@@ -10,14 +10,20 @@ static kthread_t threads[7]; // statically allocated, because we're targeting a 
 #define KIDLE_STACK_LEN 512
 #define KEVENT_STACK_LEN 2048
 #define USER_TEST_STACK_LEN 1024
+#define USER_KERNEL_STACK_LEN 2048
 
 extern void switch_to(uint16_t ss, uint16_t sp, uint16_t *old_ss,
 	uint16_t *old_sp, uint16_t first_run); // ASM routine we use for switching
+extern void copy_initial_frame(uint16_t seg, uint16_t offset, const uint16_t *frame);
 
 static uint8_t kidle_stack[512]   __attribute__((aligned(2))); // 512 bytes ought to be enough for anyone...
 static uint8_t kevent_stack[2048] __attribute__((aligned(2))); // need something a bit bigger for kevent thread
 
 static uint8_t kuser_test_stack[4][USER_TEST_STACK_LEN] __attribute__((aligned(2)));
+static uint8_t user_kernel_stacks[4][USER_KERNEL_STACK_LEN] __attribute__((aligned(2)));
+
+/* Indexed by cur_thread in the interrupt stubs; only user task IDs use these. */
+uint16_t user_kernel_stack_tops[KTHREAD_MAX_ID + 1];
 
 static void kidle_task(void) {
 	for(;;) {
@@ -49,7 +55,7 @@ static void kevent_task(void) {
 }
 
 static bool scheduler_ready    = false;              // guard against scheduling too early
-static kthread_id_t cur_thread = KTHREAD_INVALID_ID; // set to something invalid, obviously
+kthread_id_t cur_thread = KTHREAD_INVALID_ID; // also read by the interrupt stubs
 
 void test_task0(void) {
 	kconsole_init(PAGENUM_VC0);
@@ -125,6 +131,10 @@ void kevent_kbd_cb(uint8_t page_num) {
 }
 
 void kthread_init(void) {
+	for(uint8_t i = 0; i < 4; i++)
+		user_kernel_stack_tops[KTHREAD_USER_TSK0_ID + i] =
+			(uint16_t)&user_kernel_stacks[i][USER_KERNEL_STACK_LEN];
+
 	// let's first setup the idle thread
 	kthread_setup(KTHREAD_IDLE_ID, SEG_KERN,&kidle_task, (uint16_t)(&kidle_stack[KIDLE_STACK_LEN-2]));
 
@@ -154,8 +164,9 @@ void kthread_start(void) {
 int kthread_setup(kthread_id_t id, uint16_t seg, kthread_entry_t entry, uint16_t stack_top) {
 	// okay, so first we need to setup the stack as it would be expected to look
 
-	// let's start with creating SP
-	uint16_t* sp = (uint16_t*)stack_top;
+	// Build the frame on our kernel stack, then copy it into the target SS.
+	uint16_t frame[13];
+	uint16_t *sp = &frame[13];
 
 	// The ISR pushes, from the current SP downwards:
 	// ax,cx,dx,bx,original-sp,bp,si,di,ds,es
@@ -185,11 +196,12 @@ int kthread_setup(kthread_id_t id, uint16_t seg, kthread_entry_t entry, uint16_t
 	*--sp = 0x000; // DI
 	*--sp = ds;
 	*--sp = es;
+	copy_initial_frame(seg, stack_top - sizeof(frame), frame);
 
 	// now we setup the relevant struct
 	threads[id].id    = id;
 	threads[id].ss    = seg;
-	threads[id].sp    = (uint16_t)sp;
+	threads[id].sp    = stack_top - 13 * sizeof(uint16_t);
 	threads[id].state = KTHREAD_READY;
 
 	(void)entry;

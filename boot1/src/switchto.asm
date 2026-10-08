@@ -1,8 +1,36 @@
 bits 16
 
 global switch_to
+global copy_initial_frame
 
 section .text
+
+; void copy_initial_frame(uint16_t seg, uint16_t offset,
+;                         const uint16_t *frame)
+; GCC-IA16 needs DS=SS=SEG_KERN in C. Copy through ES so an initial user
+; interrupt frame can be placed in its own SS without changing C's DS.
+copy_initial_frame:
+	push bp
+	mov bp, sp
+	push es
+	push si
+	push di
+	push cx
+	pushf
+	mov ax, [bp + 4]
+	mov es, ax
+	mov di, [bp + 6]
+	mov si, [bp + 8]
+	mov cx, 13
+	cld
+	rep movsw
+	popf
+	pop cx
+	pop di
+	pop si
+	pop es
+	pop bp
+	ret
 
 ; void switch_to(uint16_t ss, uint16_t sp, uint16_t *old_ss,
 ;                uint16_t *old_sp, uint16_t first_run)
