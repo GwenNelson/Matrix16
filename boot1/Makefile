@@ -23,7 +23,10 @@ $(BUILD)/isr.o: $(SRC)/isr.asm | $(BUILD)
 $(BUILD)/kmain.o: $(SRC)/kmain.c | $(BUILD)
 	$(CC) -march=i8088 -ffreestanding -c $(SRC)/kmain.c -o $@
 
-$(BUILD)/kernel.elf: $(BUILD)/kentry.o $(BUILD)/isr.o $(BUILD)/biosdisk.o $(BUILD)/kmain.o
+$(BUILD)/kconsole.o: $(SRC)/kconsole.c $(SRC)/kconsole.h | $(BUILD)
+	$(CC) -march=i8088 -Os -ffreestanding -c $(SRC)/kconsole.c -o $@
+
+$(BUILD)/kernel.elf: $(BUILD)/kentry.o $(BUILD)/isr.o $(BUILD)/biosdisk.o $(BUILD)/kmain.o $(BUILD)/kconsole.o
 	$(LD) -T $(SRC)/kernel.ld -o $@ $^
 
 $(BUILD)/kernel.bin: $(BUILD)/kernel.elf
