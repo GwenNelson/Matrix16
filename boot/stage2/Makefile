@@ -15,7 +15,7 @@ $(BUILD)/entry.o: $(SRC)/entry.asm | $(BUILD)
 	$(NASM) -f elf $< -o $@
 
 $(BUILD)/stage2.o: $(SRC)/stage2.c | $(BUILD)
-	$(CC) -march=i8088 -Os -ffreestanding -c $< -o $@
+	$(CC) -march=i8088 -ffixed-ds -ffixed-es -Os -ffreestanding -c $< -o $@
 
 # Stage 2 is linked for offset zero within the segment where stage 1 loads it.
 $(BUILD)/stage2.elf: $(BUILD)/entry.o $(BUILD)/stage2.o $(SRC)/stage2.ld
