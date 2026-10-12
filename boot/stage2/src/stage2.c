@@ -6,6 +6,11 @@
 #define SEG_KERN		0x1000
 #define SEG_AUX			0x7000
 
+#define MAT16FS_MEDIA_TYPE_360KB_FLOPPY  0
+#define MAT16FS_360KB_FLOPPY_BLOCK_COUNT 720
+#define MAT16FS_BLOCKSIZE		 512
+
+
 extern uint8_t boot_drive_no;
 extern uint16_t bios_read_sector(uint16_t es, uint16_t bx, uint16_t cylinder, uint16_t head, uint16_t sector, uint16_t drive);
 
@@ -67,15 +72,28 @@ typedef struct __attribute__((packed)) matfs_superblock_t {
       uint8_t  padding[475];          // 37–511
 } matfs_superblock_t;
 
-matfs_superblock_t super_buf;
+static matfs_superblock_t super_buf;
+
+static uint16_t kernel_first_block;
+static bool     contiguous_kernel;
 
 static bool verify_super(matfs_superblock_t* super) {
 	if((super->magic[0] != 'M') || (super->magic[1] != 'A') || (super->magic[2] != 'T') || (super->magic[3] != '1') || (super->magic[4] != '6')) return false;
 
-	if(super->media_type     != 0)   return false;
-	if(super->block_size     != 512) return false;
-	if(super->block_count    != 720) return false;
+	if(super->media_type     != MAT16FS_MEDIA_TYPE_360KB_FLOPPY)   return false;
+	if(super->block_size     != MAT16FS_BLOCKSIZE) return false;
+	if(super->block_count    != MAT16FS_360KB_FLOPPY_BLOCK_COUNT) return false;
 	if(super->blockchain_len != 3)   return false;
+
+	if(super->kernel_first_block > super->block_count) return false;
+
+	if(super->kernel_block_count == 0) {
+		contiguous_kernel = true;
+	}
+
+	if(super->kernel_block_count > 128) return false;
+
+	
 
 	return true;
 }
