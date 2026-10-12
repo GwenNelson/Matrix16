@@ -34,8 +34,7 @@ boot/stage1/build/bootsector.bin: stage1
 
 boot/stage2/build/stage2.bin: stage2
 
-boot1/build/kernel.bin:
-	$(MAKE) -C boot1/ build/kernel.bin
+boot1/build/kernel.bin: boot1
 
 rootfs.img: boot/stage1/build/bootsector.bin boot/stage2/build/stage2.bin boot1/build/kernel.bin fsgen rootfs/SHELL.PRG rootfs/README.TXT rootfs/SYSTEM.CFG
 	./fsgen/fsgen rootfs.img \

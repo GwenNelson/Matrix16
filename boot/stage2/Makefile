@@ -17,10 +17,9 @@ $(BUILD)/entry.o: $(SRC)/entry.asm | $(BUILD)
 $(BUILD)/stage2.o: $(SRC)/stage2.c | $(BUILD)
 	$(CC) -march=i8088 -Os -ffreestanding -c $< -o $@
 
-# The existing linker script places code at offset zero and supplies the
-# __bss_start/__bss_end symbols used by the unchanged entry assembly.
-$(BUILD)/stage2.elf: $(BUILD)/entry.o $(BUILD)/stage2.o ../../boot1/src/kernel.ld
-	$(LD) -T ../../boot1/src/kernel.ld -o $@ $(BUILD)/entry.o $(BUILD)/stage2.o
+# Stage 2 is linked for offset zero within the segment where stage 1 loads it.
+$(BUILD)/stage2.elf: $(BUILD)/entry.o $(BUILD)/stage2.o $(SRC)/stage2.ld
+	$(LD) -T $(SRC)/stage2.ld -o $@ $(BUILD)/entry.o $(BUILD)/stage2.o
 
 $(BUILD)/stage2.bin: $(BUILD)/stage2.elf
 	$(OBJCOPY) -O binary $< $@

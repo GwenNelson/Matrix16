@@ -1,18 +1,21 @@
-; this is actually our kernel setup code for now
-
 BITS 16
 
-extern kernel_main
+extern stage2_main
 extern __bss_start
 extern __bss_end
 
-global kernel_start
+global stage2_start
 
-kernel_start:
-	; setup the kernel's segments explicitly
-	mov ax, 0x1000
+global boot_drive_no
+
+stage2_start:
+	; setup the segments, we live in the AUX segment, 7000h
+	mov ax, 0x7000
 	mov ds, ax
 	mov es, ax
+
+	; now store the boot drive number, it should have been preserved for us by stage1
+	mov [boot_drive_no], dl
 
 	cli
 	mov ss, ax
@@ -27,9 +30,12 @@ kernel_start:
 	cld
 	rep stosb
 
-	call kernel_main
+	call stage2_main
 
 .hang:
 	cli
 	hlt
 	jmp .hang
+
+boot_drive_no:
+	db 0
