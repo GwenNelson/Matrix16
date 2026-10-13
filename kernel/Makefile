@@ -6,7 +6,7 @@ OBJCOPY = ia16-elf-objcopy
 SRC     = src
 BUILD   = build
 
-all: $(BUILD)/matrix16.img
+all: $(BUILD)/kernel.bin
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -38,13 +38,7 @@ $(BUILD)/kernel.elf: $(BUILD)/kentry.o $(BUILD)/isr.o $(BUILD)/switchto.o $(BUIL
 $(BUILD)/kernel.bin: $(BUILD)/kernel.elf
 	$(OBJCOPY) -O binary $< $@
 
-$(BUILD)/matrix16.img: $(SRC)/boot1.asm $(BUILD)/kernel.bin
-	$(NASM) -f bin $(SRC)/boot1.asm -o $@
-
-run: $(BUILD)/matrix16.img
-	qemu-system-i386 -drive file=$<,format=raw,if=floppy
-
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all run clean
+.PHONY: all clean

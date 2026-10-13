@@ -1,7 +1,7 @@
 *.img
 *.bin
 *.o
-boot1/build/*
+kernel/build/*
 fsgen/fsgen
 rootfs/*.PRG
 rootfs/*.TSK

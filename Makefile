@@ -1,12 +1,12 @@
-.PHONY: all clean boot1 boot1-clean stage1 stage1-clean stage2 stage2-clean fsgen fsgen-clean run
+.PHONY: all clean kernel kernel-clean stage1 stage1-clean stage2 stage2-clean fsgen fsgen-clean run
 
-all: rootfs.img boot1
+all: rootfs.img kernel
 
-boot1:
-	$(MAKE) -C boot1/
+kernel:
+	$(MAKE) -C kernel/
 
-boot1-clean:
-	$(MAKE) -C boot1/ clean
+kernel-clean:
+	$(MAKE) -C kernel/ clean
 
 stage1:
 	$(MAKE) -C boot/stage1/
@@ -38,22 +38,21 @@ boot/stage1/build/bootsector.bin: stage1
 
 boot/stage2/build/stage2.bin: stage2
 
-boot1/build/kernel.bin: boot1
+kernel/build/kernel.bin: kernel
 
-rootfs.img: boot/stage1/build/bootsector.bin boot/stage2/build/stage2.bin boot1/build/kernel.bin fsgen rootfs/SHELL.PRG rootfs/HELLO.TSK rootfs/README.TXT rootfs/SYSTEM.CFG
+rootfs.img: boot/stage1/build/bootsector.bin boot/stage2/build/stage2.bin kernel/build/kernel.bin fsgen rootfs/SHELL.PRG rootfs/HELLO.TSK rootfs/README.TXT rootfs/SYSTEM.CFG
 	./fsgen/fsgen rootfs.img \
 		--bootsector boot/stage1/build/bootsector.bin \
 		--stage2 boot/stage2/build/stage2.bin \
-		--kernel boot1/build/kernel.bin \
+		--kernel kernel/build/kernel.bin \
 		--task0 HELLO.TSK=rootfs/HELLO.TSK \
 		--file SHELL.PRG=rootfs/SHELL.PRG \
 		--file README.TXT=rootfs/README.TXT \
 		--file SYSTEM.CFG=rootfs/SYSTEM.CFG
 
-run: rootfs.img boot1
+run: rootfs.img kernel
 	qemu-system-i386 \
-		-drive file=rootfs.img,format=raw,if=floppy,index=0 \
-		-drive file=boot1/build/matrix16.img,format=raw,if=floppy,index=1
+		-drive file=rootfs.img,format=raw,if=floppy,index=0
 
-clean: stage1-clean stage2-clean boot1-clean fsgen-clean
+clean: stage1-clean stage2-clean kernel-clean fsgen-clean
 	rm -f rootfs/SHELL.PRG rootfs/HELLO.TSK rootfs.img
