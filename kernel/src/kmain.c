@@ -1,6 +1,5 @@
 #include <stdint.h>
 #include <stdbool.h>
-#include "8086.h"
 #include "bioscons.h"
 #include "biosdisk.h"
 #include "isr.h"
@@ -22,32 +21,6 @@ char buf[512];
 void k_timer_callback(void) {
 	kthread_schedule();
 }
-
-
-
-#define SYS_WRITE 1
-
-void k_syscall_sys_write(registers_t *regs) {
-	if(regs->bx != 1) {
-		kpanic("Attempted SYS_WRITE to unknown handle!"); // Probably want a generic error handler for user programs instead of always kpanic
-	}
-	char __far *buf = mk_farptr(regs->ds,regs->cx);
-	for(int i=0; i < regs->dx; i++) {
-		bios_putchar(buf[i],cur_page_no); // TODO - should check what page no the task is assigned
-	}
-}
-
-void k_syscall_callback(registers_t *regs) {
-	switch(regs->ax) {
-		case SYS_WRITE:
-			k_syscall_sys_write(regs);
-		break;
-		default:
-			kpanic("Unknown syscall");
-		break;
-	}
-}
-
 uint16_t fs_read_rootfs_block(uint16_t lba, uint16_t es, uint16_t bx) {
 	uint16_t c;
 	uint16_t h;
