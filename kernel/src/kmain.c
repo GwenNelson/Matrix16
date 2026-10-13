@@ -1,25 +1,13 @@
 #include <stdint.h>
 #include <stdbool.h>
+#include "8086.h"
 #include "bioscons.h"
 #include "biosdisk.h"
 #include "isr.h"
 #include "kpanic.h"
 #include "kthread.h"
+#include "string.h"
 #include "utils.h"
-
-
-typedef struct registers_t {
-    uint16_t es;       // Top of stack after segment push
-    uint16_t ds;       
-    uint16_t di;       // pusha structure starts here
-    uint16_t si;
-    uint16_t bp;
-    uint16_t sp;       // Original SP value before pusha
-    uint16_t bx;
-    uint16_t dx;
-    uint16_t cx;
-    uint16_t ax;       // Bottom of pusha (lowest memory address)
-} __attribute__((packed)) registers_t;
 
 typedef struct rootfs_dir_t {
 	uint16_t start_lba;
@@ -129,48 +117,6 @@ bool fs_check_super(void) {
 	rootfs_dir_start   = *dir_start;
 	rootfs_dir_sectors = *dir_sectors;
 	return true;
-}
-
-static int strcmp(const char *a, const char *b) {
-	while(*a != '\0' && *a == *b) {
-		a++;
-		b++;
-	}
-	return (uint8_t)*a - (uint8_t)*b;
-}
-
-static int strncmp(const char *a, const char *b, uint16_t n) {
-	while(n != 0) {
-		uint8_t ca = (uint8_t)*a++;
-		uint8_t cb = (uint8_t)*b++;
-
-		if(ca != cb)
-			return ca - cb;
-		if(ca == '\0')
-			return 0;
-		n--;
-	}
-	return 0;
-}
-
-static char *strchr(const char *s, int c) {
-	uint8_t target = (uint8_t)c;
-
-	for(;;) {
-		if((uint8_t)*s == target)
-			return (char*)s;
-		if(*s == '\0')
-			return 0;
-		s++;
-	}
-}
-
-static char *strcpy(char *dest, const char *src) {
-	char *result = dest;
-
-	while((*dest++ = *src++) != '\0')
-		;
-	return result;
 }
 
 bool fs_locate_file(char* name, uint16_t es, char* buf, uint16_t *len) {
