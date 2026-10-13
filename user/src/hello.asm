@@ -1,5 +1,20 @@
-bits 16
-org 0
+BITS 16
+ORG 0
 
 start:
-    jmp start
+	; setup our segments first
+	mov ax,cs
+	mov ds,ax
+
+	mov ax, 1              ; SYS_WRITE
+	mov bx, 1              ; stdout
+	mov cx, message
+	mov dx, message_end - message
+	int 0x80
+
+.hang:
+    jmp .hang
+
+message:
+    db "Hello from Matrix16!\n"
+message_end:
