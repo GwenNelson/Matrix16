@@ -33,6 +33,18 @@ static void lba2chs(uint16_t lba, uint16_t *cylinder, uint16_t *head, uint16_t *
         *sector   = (lba % 9) + 1;
 }
 
+static bool read_lba_sector(uint16_t segment, uint16_t offset,
+                            uint16_t drive, uint16_t lba) {
+	uint16_t cylinder;
+	uint16_t head;
+	uint16_t sector;
+
+	if(lba >= MAT16FS_360KB_FLOPPY_BLOCK_COUNT) return false;
+
+	lba2chs(lba, &cylinder, &head, &sector);
+	return bios_read_sector(segment, offset, cylinder, head, sector, drive) == 0;
+}
+
 static void bios_puts(char* s) {
         while(*s) {
                 switch(*s) {
@@ -78,22 +90,88 @@ static uint16_t kernel_first_block;
 static bool     contiguous_kernel;
 
 static bool verify_super(matfs_superblock_t* super) {
+	uint16_t task_first[4];
+	uint16_t i;
+	uint32_t checksum;
+
 	if((super->magic[0] != 'M') || (super->magic[1] != 'A') || (super->magic[2] != 'T') || (super->magic[3] != '1') || (super->magic[4] != '6')) return false;
 
-	if(super->media_type     != MAT16FS_MEDIA_TYPE_360KB_FLOPPY)   return false;
+	if(super->media_type     != MAT16FS_MEDIA_TYPE_360KB_FLOPPY) return false;
 	if(super->block_size     != MAT16FS_BLOCKSIZE) return false;
 	if(super->block_count    != MAT16FS_360KB_FLOPPY_BLOCK_COUNT) return false;
-	if(super->blockchain_len != 3)   return false;
+	if(super->blockchain_len != 3) return false;
 
-	if(super->kernel_first_block > super->block_count) return false;
+	/* The kernel is stored in the data area; a zero count means its chain is
+	 * fragmented, while a nonzero count describes a contiguous extent. */
+	if(super->kernel_first_block < 18 ||
+	   super->kernel_first_block >= MAT16FS_360KB_FLOPPY_BLOCK_COUNT) return false;
+	if(super->kernel_block_count > 128) return false;
+	if(super->kernel_block_count != 0 &&
+	   super->kernel_block_count > MAT16FS_360KB_FLOPPY_BLOCK_COUNT - super->kernel_first_block) return false;
 
-	if(super->kernel_block_count == 0) {
-		contiguous_kernel = true;
+	/* A zero root pointer disables the filesystem; otherwise its directory
+	 * chain must start in the data area and fit within the disk. */
+	if(super->root_dir_start == 0) {
+		if(super->root_dir_len != 0) return false;
+	} else {
+		if(super->root_dir_start < 18 ||
+		   super->root_dir_start >= MAT16FS_360KB_FLOPPY_BLOCK_COUNT) return false;
+		if(super->root_dir_len == 0 ||
+		   super->root_dir_len > MAT16FS_360KB_FLOPPY_BLOCK_COUNT - super->root_dir_start) return false;
 	}
 
-	if(super->kernel_block_count > 128) return false;
+	/* Backup metadata pointers are optional absolute LBAs and may be located
+	 * anywhere on this disk. The blockchain backup occupies three sectors. */
+	if(super->backup_super != 0 &&
+	   super->backup_super >= MAT16FS_360KB_FLOPPY_BLOCK_COUNT) return false;
+	if(super->blockchain_backup != 0 &&
+	   (super->blockchain_backup >= MAT16FS_360KB_FLOPPY_BLOCK_COUNT ||
+	    super->blockchain_backup > MAT16FS_360KB_FLOPPY_BLOCK_COUNT - 3)) return false;
+	if(super->backup_rootdir != 0 &&
+	   (super->backup_rootdir < 13 || super->backup_rootdir >= 18)) return false;
 
-	
+	/* Each populated task pointer names its first data block. */
+	task_first[0] = super->task0;
+	task_first[1] = super->task1;
+	task_first[2] = super->task2;
+	task_first[3] = super->task3;
+	for(i = 0; i < 4; i++) {
+		if(task_first[i] != 0xFFFF &&
+		   (task_first[i] < 18 || task_first[i] >= MAT16FS_360KB_FLOPPY_BLOCK_COUNT)) return false;
+	}
+
+	/* The format requires all bytes following the checksum to be zero. */
+	for(i = 0; i < sizeof(super->padding); i++) {
+		if(super->padding[i] != 0) return false;
+	}
+
+	/* fsgen sums the 16-bit fields from media_type through task3, modulo
+	 * 65536, and stores the result in checksum. */
+	checksum = super->media_type + super->block_size + super->block_count +
+	           super->blockchain_len + super->kernel_first_block +
+	           super->kernel_block_count + super->root_dir_start +
+	           super->root_dir_len + super->backup_super +
+	           super->blockchain_backup + super->backup_rootdir +
+	           super->task0 + super->task1 + super->task2 + super->task3;
+	if((uint16_t)checksum != super->checksum) return false;
+
+	kernel_first_block = super->kernel_first_block;
+	contiguous_kernel = super->kernel_block_count != 0;
+
+	return true;
+}
+
+static bool load_contiguous_kernel(void) {
+	uint16_t block_count = super_buf.kernel_block_count;
+	uint16_t i;
+
+	if(!contiguous_kernel) return false;
+	for(i = 0; i < block_count; i++) {
+		uint16_t offset = i * MAT16FS_BLOCKSIZE;
+		uint16_t lba = kernel_first_block + i;
+
+		if(!read_lba_sector(SEG_KERN, offset, boot_drive_no, lba)) return false;
+	}
 
 	return true;
 }
@@ -144,6 +222,20 @@ void stage2_main(void) {
 	bios_puts("OK\n");
 
 	bios_puts("Kernel:\n");
+	if(contiguous_kernel) {
+		bios_puts("\tLoad contiguous kernel: ");
+		if(!load_contiguous_kernel()) {
+			bios_puts("FAIL\n");
+			for(;;);
+		}
+	} else {
+		bios_puts("\n\nnon-contiguous kernel not yet supported!\n");
+		for(;;);
+	}
+
+	bios_puts("\n\nSwitching to kernel...\n");
+
+	__asm__ volatile ("ljmp $0x1000, $0x0000");
 
 	for(;;);
 }
