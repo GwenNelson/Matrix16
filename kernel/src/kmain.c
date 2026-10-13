@@ -1,6 +1,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "bioscons.h"
+#include "biosdisk.h"
+#include "isr.h"
 #include "kpanic.h"
 #include "kthread.h"
 #include "utils.h"
@@ -25,12 +27,6 @@ typedef struct rootfs_dir_t {
 	uint16_t size;
 	char name[26];
 } __attribute__((packed)) rootfs_dir_t;
-
-extern uint16_t bios_read_sector(uint16_t es, uint16_t bx, uint16_t cylinder, uint16_t head, uint16_t sector, uint16_t drive);
-
-extern void install_isr08(void);
-extern void install_isr09(void);
-extern void install_isr80(void);
 
 char buf[512];
 

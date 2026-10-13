@@ -23,7 +23,7 @@ $(BUILD)/isr.o: $(SRC)/isr.asm | $(BUILD)
 $(BUILD)/switchto.o: $(SRC)/switchto.asm | $(BUILD)
 	$(NASM) -f elf $< -o $@
 
-$(BUILD)/kmain.o: $(SRC)/kmain.c $(SRC)/bioscons.h $(SRC)/kpanic.h $(SRC)/utils.h | $(BUILD)
+$(BUILD)/kmain.o: $(SRC)/kmain.c $(SRC)/bioscons.h $(SRC)/biosdisk.h $(SRC)/isr.h $(SRC)/kpanic.h $(SRC)/utils.h | $(BUILD)
 	$(CC) -march=i8088 -ffreestanding -c $(SRC)/kmain.c -o $@
 
 $(BUILD)/bioscons.o: $(SRC)/bioscons.c $(SRC)/bioscons.h | $(BUILD)
