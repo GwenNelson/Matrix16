@@ -4,3 +4,4 @@
 boot1/build/*
 fsgen/fsgen
 rootfs/*.PRG
+rootfs/*.TSK
