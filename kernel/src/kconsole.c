@@ -4,8 +4,6 @@
 #define ROWS 25
 #define COLS 80
 #define CELLS (ROWS * COLS)
-#define INPUT_SIZE 256
-#define ANSI_PARAMS 4
 
 /* Screen contents stay in VRAM; each page occupies 4096 bytes. */
 static const uint16_t page_segments[CONSOLE_COUNT] = {
@@ -23,10 +21,10 @@ typedef struct console_state_t {
 	bool num_lock;
 	uint8_t ansi_state; /* 0: text, 1: ESC, 2: CSI, 3: discarded CSI. */
 	uint8_t param_index;
-	uint16_t params[ANSI_PARAMS];
+	uint16_t params[KCONSOLE_ANSI_PARAMS];
 	volatile uint16_t input_head;
 	volatile uint16_t input_tail;
-	volatile char input[INPUT_SIZE];
+	volatile char input[KCONSOLE_INPUT_SIZE];
 } console_state_t;
 
 static console_state_t consoles[CONSOLE_COUNT];
@@ -139,7 +137,7 @@ void kconsole_init(uint8_t page_num) {
 	console->num_lock = false;
 	console->ansi_state = 0;
 	console->param_index = 0;
-	for(uint8_t i = 0; i < ANSI_PARAMS; i++)
+	for(uint8_t i = 0; i < KCONSOLE_ANSI_PARAMS; i++)
 		console->params[i] = 0;
 	console->input_head = 0;
 	console->input_tail = 0;
@@ -277,7 +275,7 @@ void kconsole_putc(uint8_t page_num, char c) {
 		if(c == '[') {
 			console->ansi_state = 2;
 			console->param_index = 0;
-			for(uint8_t i = 0; i < ANSI_PARAMS; i++)
+			for(uint8_t i = 0; i < KCONSOLE_ANSI_PARAMS; i++)
 				console->params[i] = 0;
 		}
 		return;
@@ -292,7 +290,7 @@ void kconsole_putc(uint8_t page_num, char c) {
 				uint16_t value = console->params[console->param_index];
 				value = value * 10 + c - '0';
 				console->params[console->param_index] = value > 999 ? 999 : value;
-			} else if(c == ';' && console->param_index < ANSI_PARAMS - 1) {
+			} else if(c == ';' && console->param_index < KCONSOLE_ANSI_PARAMS - 1) {
 				console->param_index++;
 			} else {
 				console->ansi_state = 3; /* Discard unsupported/oversized CSI. */
@@ -336,13 +334,73 @@ void kconsole_puts(uint8_t page_num, char *string) {
 		kconsole_putc(page_num, *string++);
 }
 
+bool kconsole_save_state(uint8_t page_num, kconsole_saved_state_t *state) {
+	if(page_num >= CONSOLE_COUNT || state == 0) return false;
+
+	console_state_t *console = &consoles[page_num];
+	uint16_t tail = console->input_tail;
+	uint16_t input_length = (uint16_t)(console->input_head - tail);
+	if(input_length > KCONSOLE_INPUT_SIZE) return false;
+
+	state->row = console->row;
+	state->col = console->col;
+	state->saved_row = console->saved_row;
+	state->saved_col = console->saved_col;
+	state->attribute = console->attribute;
+	state->wrap = console->wrap;
+	state->caps_lock = console->caps_lock;
+	state->num_lock = console->num_lock;
+	state->ansi_state = console->ansi_state;
+	state->param_index = console->param_index;
+	for(uint8_t i = 0; i < KCONSOLE_ANSI_PARAMS; i++) state->params[i] = console->params[i];
+	state->input_length = input_length;
+	for(uint16_t i = 0; i < input_length; i++) state->input[i] = console->input[(uint8_t)(tail + i)];
+
+	return true;
+}
+
+bool kconsole_restore_state(uint8_t page_num, const kconsole_saved_state_t *state) {
+	if(page_num >= CONSOLE_COUNT || state == 0) return false;
+	if(state->row >= ROWS || state->col >= COLS) return false;
+	if(state->saved_row >= ROWS || state->saved_col >= COLS) return false;
+	if(state->wrap > 1 || state->caps_lock > 1 || state->num_lock > 1) return false;
+	if(state->ansi_state > 3 || state->param_index >= KCONSOLE_ANSI_PARAMS) return false;
+	if(state->input_length > KCONSOLE_INPUT_SIZE) return false;
+	for(uint8_t i = 0; i < KCONSOLE_ANSI_PARAMS; i++) {
+		if(state->params[i] > 999) return false;
+	}
+
+	console_state_t *console = &consoles[page_num];
+	console->row = state->row;
+	console->col = state->col;
+	console->saved_row = state->saved_row;
+	console->saved_col = state->saved_col;
+	console->attribute = state->attribute;
+	console->wrap = state->wrap;
+	console->caps_lock = state->caps_lock;
+	console->num_lock = state->num_lock;
+	console->ansi_state = state->ansi_state;
+	console->param_index = state->param_index;
+	for(uint8_t i = 0; i < KCONSOLE_ANSI_PARAMS; i++) console->params[i] = state->params[i];
+	console->input_tail = 0;
+	for(uint16_t i = 0; i < state->input_length; i++) console->input[(uint8_t)i] = state->input[i];
+	console->input_head = state->input_length;
+
+	if(page_num == active_console) {
+		select_led_state();
+		update_cursor(page_num);
+	}
+
+	return true;
+}
+
 /* One IRQ producer and one foreground consumer. Publish the head only once
  * the whole sequence is stored. The counters permit all 256 bytes to be used. */
 static void enqueue(const char *bytes, uint8_t length) {
 	console_state_t *console = &consoles[active_console];
 	uint16_t head = console->input_head;
 	uint16_t used = (uint16_t)(head - console->input_tail);
-	if(length > INPUT_SIZE - used)
+	if(length > KCONSOLE_INPUT_SIZE - used)
 		return;
 	for(uint8_t i = 0; i < length; i++)
 		console->input[(uint8_t)(head + i)] = bytes[i];

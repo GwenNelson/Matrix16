@@ -3,12 +3,33 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#define KCONSOLE_INPUT_SIZE 256
+#define KCONSOLE_ANSI_PARAMS 4
+
 enum {
 	PAGENUM_VC0 = 0,
 	PAGENUM_VC1 = 1,
 	PAGENUM_VC2 = 2,
 	PAGENUM_VC3 = 3
 };
+
+/* Logical per-console state suitable for task save and restore. VRAM, the
+ * active console, callbacks, and physical keyboard state are not included. */
+typedef struct kconsole_saved_state_t {
+	uint8_t row;
+	uint8_t col;
+	uint8_t saved_row;
+	uint8_t saved_col;
+	uint8_t attribute;
+	uint8_t wrap;
+	uint8_t caps_lock;
+	uint8_t num_lock;
+	uint8_t ansi_state;
+	uint8_t param_index;
+	uint16_t params[KCONSOLE_ANSI_PARAMS];
+	uint16_t input_length;
+	char input[KCONSOLE_INPUT_SIZE];
+} kconsole_saved_state_t;
 
 /* Initialize pages before enabling keyboard input. Uses 80x25 color text mode. */
 void kconsole_init(uint8_t page_num);
@@ -21,6 +42,11 @@ void kconsole_switchto(uint8_t page_num);
 void kconsole_move_cursor(uint8_t page_num, uint8_t row, uint8_t col);
 void kconsole_putc(uint8_t page_num, char c);
 void kconsole_puts(uint8_t page_num, char *string);
+
+/* These functions copy only private logical state and never read or write the
+ * console's VRAM. The caller must ensure the console is not being modified. */
+bool kconsole_save_state(uint8_t page_num, kconsole_saved_state_t *state);
+bool kconsole_restore_state(uint8_t page_num, const kconsole_saved_state_t *state);
 
 /* XT set 1, US layout. Registered callbacks run here in IRQ context: they must
  * defer BIOS calls, console switching, disk access, and other blocking work. */
