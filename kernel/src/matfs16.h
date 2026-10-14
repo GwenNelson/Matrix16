@@ -15,6 +15,8 @@
 /* A directory filename field is 26 bytes including its terminating NUL. */
 #define MATFS16_FILENAME_MAXLEN             26
 #define MATFS16_DIRECTORY_ENTRIES_PER_BLOCK 15
+#define MATFS16_TASK_SLOT_COUNT               4
+#define MATFS16_TASK_SLOT_EMPTY          0xFFFF
 
 /* Special values stored in blockchain entries. */
 #define MATFS16_CHAIN_END              0xF00F
@@ -83,6 +85,17 @@ typedef enum matfs16_status {
  * storage. MATFS16_END_OF_DIRECTORY means that index is past the last entry.
  */
 matfs16_status_t matfs16_read_direntry(uint8_t drive_no, uint16_t index, matfs_directory_entry_t *entry);
+
+/*
+ * Return the root-directory filename stored in one of the four superblock
+ * task slots. filename must provide MATFS16_FILENAME_MAXLEN bytes and result
+ * must point to caller-owned pointer storage.
+ *
+ * A populated slot copies its filename into filename and stores filename in
+ * *result. An unused slot stores NULL in *result. Errors are returned as the
+ * function's MATFS16 status value.
+ */
+matfs16_status_t matfs16_read_task_slot(uint8_t drive_no, uint8_t slot, char *filename, char **result);
 
 /*
  * Find filename in the MATFS16 root directory on drive_no.

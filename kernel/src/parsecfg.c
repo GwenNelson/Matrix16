@@ -76,12 +76,10 @@ static void set_system_cfg_defaults(system_cfg_t* config) {
 	config->start_delay = SYSTEM_CFG_DEFAULT_START_DELAY;
 
 	for(i = 0; i < SYSTEM_CFG_TASK_COUNT; i++) {
-		config->tasks[i].source = SYSTEM_CFG_SOURCE_NONE;
+		config->tasks[i].source = SYSTEM_CFG_SOURCE_DEFAULT;
 		config->tasks[i].console = (system_cfg_console_t)i;
 		config->tasks[i].filename[0] = '\0';
 	}
-
-	for(i = 0; i < 4; i++) config->tasks[i].source = SYSTEM_CFG_SOURCE_SUPER_A;
 }
 
 void reset_system_cfg_defaults(void) {
@@ -201,6 +199,7 @@ static bool validate_system_cfg_consoles(system_cfg_t* config) {
 
 	for(i = 0; i < SYSTEM_CFG_TASK_COUNT; i++) {
 		if(config->tasks[i].source == SYSTEM_CFG_SOURCE_NONE) continue;
+		if(config->tasks[i].source == SYSTEM_CFG_SOURCE_DEFAULT && config->default_action == SYSTEM_CFG_DEFAULT_NONE) continue;
 		if(console_used[config->tasks[i].console]) return false;
 		console_used[config->tasks[i].console] = true;
 	}

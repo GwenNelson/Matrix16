@@ -262,6 +262,47 @@ matfs16_status_t matfs16_read_direntry(uint8_t drive_no, uint16_t index, matfs_d
 	return MATFS16_ERR_BAD_DIRECTORY;
 }
 
+matfs16_status_t matfs16_read_task_slot(uint8_t drive_no, uint8_t slot, char* filename, char** result) {
+	uint8_t* scratch_buf;
+	matfs_superblock_t* super;
+	matfs_directory_entry_t entry;
+	matfs16_status_t status;
+	uint16_t first_block;
+	uint16_t index = 0;
+
+	if(result == NULL || filename == NULL || slot >= MATFS16_TASK_SLOT_COUNT) return MATFS16_ERR_INVALID_ARGUMENT;
+	*result = NULL;
+
+	scratch_buf = get_scratch_buf();
+	status = matfs16_load_block(drive_no, MATFS16_SUPERBLOCK_LBA,
+	                            SEG_KERN, (uint16_t)scratch_buf);
+	if(status != MATFS16_OK) return status;
+
+	super = (matfs_superblock_t*)scratch_buf;
+	if(!verify_super(super)) return MATFS16_ERR_BAD_SUPERBLOCK;
+
+	if(slot == 0) first_block = super->task0;
+	else if(slot == 1) first_block = super->task1;
+	else if(slot == 2) first_block = super->task2;
+	else first_block = super->task3;
+
+	if(first_block == MATFS16_TASK_SLOT_EMPTY) return MATFS16_OK;
+
+	for(;;) {
+		status = matfs16_read_direntry(drive_no, index, &entry);
+		if(status == MATFS16_END_OF_DIRECTORY) return MATFS16_ERR_NOT_FOUND;
+		if(status != MATFS16_OK) return status;
+
+		if(entry.first_block == first_block) {
+			strcpy(filename, entry.name);
+			*result = filename;
+			return MATFS16_OK;
+		}
+
+		index++;
+	}
+}
+
 matfs16_status_t matfs16_locate_file(const char* filename, uint8_t drive_no, uint16_t* lba, uint16_t* length) {
 	uint8_t* scratch_buf;
 	matfs_superblock_t* super;
