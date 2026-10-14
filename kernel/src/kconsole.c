@@ -370,6 +370,13 @@ static void enqueue(const char *bytes, uint8_t length) {
 	console->input_head = head + length;
 }
 
+uint16_t kconsole_input_available(uint8_t page_num) {
+	if(page_num >= CONSOLE_COUNT) return 0;
+
+	console_state_t *console = &consoles[page_num];
+	return (uint16_t)(console->input_head - console->input_tail);
+}
+
 bool kconsole_getc(uint8_t page_num, char *out) {
 	if(page_num >= CONSOLE_COUNT || out == 0)
 		return false;

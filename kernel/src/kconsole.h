@@ -56,6 +56,7 @@ bool kconsole_restore_state(uint8_t page_num, const kconsole_saved_state_t *stat
 void kconsole_kb_callback(uint8_t scancode);
 
 /* Nonblocking, single consumer per console. Input is never echoed here. */
+uint16_t kconsole_input_available(uint8_t page_num);
 bool kconsole_getc(uint8_t page_num, char *out);
 
 /* Discard queued input, then sleep until a fresh input byte arrives. This must
