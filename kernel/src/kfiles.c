@@ -80,6 +80,7 @@ uint8_t kfile_open(uint8_t drive_num, const char* filename) {
 		file_descriptors[fd].position = 0;
 		file_descriptors[fd].block_offset = 0;
 		file_descriptors[fd].drive_num = drive_num;
+		file_descriptors[fd].owner = kthread_cur_thread();
 		file_descriptors[fd].used = true;
 		release_file_lock();
 		return (uint8_t)fd;
@@ -87,6 +88,19 @@ uint8_t kfile_open(uint8_t drive_num, const char* filename) {
 
 	release_file_lock();
 	return KFILE_INVALID_FD;
+}
+
+bool kfile_close(uint8_t fd) {
+	acquire_file_lock();
+
+	if(fd >= file_descriptor_count || !file_descriptors[fd].used) {
+		release_file_lock();
+		return false;
+	}
+
+	file_descriptors[fd].used = false;
+	release_file_lock();
+	return true;
 }
 
 bool kfile_read(uint8_t fd, uint16_t count, uint16_t seg, uint16_t buf, uint16_t* bytes_read) {
@@ -102,7 +116,7 @@ bool kfile_read(uint8_t fd, uint16_t count, uint16_t seg, uint16_t buf, uint16_t
 
 	acquire_file_lock();
 
-	if(fd >= file_descriptor_count || !file_descriptors[fd].used) {
+	if(fd >= file_descriptor_count || !file_descriptors[fd].used || file_descriptors[fd].owner != kthread_cur_thread()) {
 		release_file_lock();
 		return false;
 	}

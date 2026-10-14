@@ -6,6 +6,8 @@
 
 #include "shell_command.h"
 
+extern uint8_t __shell_environment_start[];
+
 #define LINE_LENGTH 80
 
 static uint16_t readline(char* line, uint16_t capacity) {
@@ -66,6 +68,8 @@ static void uppercase(char* string) {
 void shell_mainloop() {
 	char line[LINE_LENGTH];
 	char command_path[28];
+	char* cmd_params;
+	uint16_t cmd_params_len;
 	uint16_t command_length;
 	uint16_t file_length;
 
@@ -74,13 +78,22 @@ void shell_mainloop() {
 		printf("A:>");
 		readline(line,sizeof(line));
 
+		uppercase(line);
+		cmd_params = strchr(line,' ');
+		if(cmd_params != NULL) {
+			*cmd_params++ = '\0';
+			while(*cmd_params == ' ') cmd_params++;
+			cmd_params_len = strnlen(cmd_params,LINE_LENGTH);
+			memcpy(__shell_environment_start,cmd_params,cmd_params_len+1);
+		} else {
+			cmd_params_len = 0;
+		}
+
 		command_length = strnlen(line,22);
 		if(command_length == 0 || command_length > 21) {
 			printf("Invalid command name %s\n",line);
 			continue;
 		}
-
-		uppercase(line);
 		command_path[0] = 'A';
 		command_path[1] = ':';
 		memcpy(command_path + 2,line,command_length);

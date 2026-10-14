@@ -60,6 +60,8 @@ cmds-clean:
 
 user/cmd/build/CLS.CMD: cmds
 
+user/cmd/build/TYPE.CMD: cmds
+
 rootfs/SHELL.TSK: user/shell/build/SHELL.BIN taskgen
 	mkdir -p rootfs
 	./taskgen/taskgen $< $@
@@ -78,7 +80,7 @@ boot/stage2/build/stage2.bin: stage2
 
 kernel/build/kernel.bin: kernel
 
-rootfs.img: boot/stage1/build/bootsector.bin boot/stage2/build/stage2.bin kernel/build/kernel.bin fsgen rootfs/SHELL.TSK rootfs/HELLO.TSK user/cmd/build/CLS.CMD rootfs/README.TXT rootfs/SYSTEM.CFG
+rootfs.img: boot/stage1/build/bootsector.bin boot/stage2/build/stage2.bin kernel/build/kernel.bin fsgen rootfs/SHELL.TSK rootfs/HELLO.TSK user/cmd/build/CLS.CMD user/cmd/build/TYPE.CMD rootfs/README.TXT rootfs/SYSTEM.CFG
 	./fsgen/fsgen rootfs.img \
 		--bootsector boot/stage1/build/bootsector.bin \
 		--stage2 boot/stage2/build/stage2.bin \
@@ -86,6 +88,7 @@ rootfs.img: boot/stage1/build/bootsector.bin boot/stage2/build/stage2.bin kernel
 		--task0 HELLO.TSK=rootfs/HELLO.TSK \
 		--file SHELL.TSK=rootfs/SHELL.TSK \
 		--file CLS.CMD=user/cmd/build/CLS.CMD \
+		--file TYPE.CMD=user/cmd/build/TYPE.CMD \
 		--file README.TXT=rootfs/README.TXT \
 		--file SYSTEM.CFG=rootfs/SYSTEM.CFG
 

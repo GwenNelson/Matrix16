@@ -48,7 +48,7 @@ $(BUILD)/kheap.o: $(SRC)/kheap.c $(SRC)/kheap.h $(SRC)/kpanic.h | $(BUILD)
 $(BUILD)/kfiles.o: $(SRC)/kfiles.c $(SRC)/kfiles.h $(SRC)/kheap.h $(SRC)/kmemmap.h $(SRC)/kthread.h $(SRC)/matfs16.h $(SRC)/utils.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/kfiles.c -o $@
 
-$(BUILD)/ksyscall.o: $(SRC)/ksyscall.c $(SRC)/ksyscall.h $(SRC)/8086.h $(SRC)/bioscons.h $(SRC)/kpanic.h $(SRC)/utils.h ../include/syscalls.inc | $(BUILD)
+$(BUILD)/ksyscall.o: $(SRC)/ksyscall.c $(SRC)/ksyscall.h $(SRC)/8086.h $(SRC)/bioscons.h $(SRC)/kfiles.h $(SRC)/kpanic.h $(SRC)/utils.h ../include/syscalls.inc | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/ksyscall.c -o $@
 
 $(BUILD)/utils.o: $(SRC)/utils.c $(SRC)/utils.h | $(BUILD)

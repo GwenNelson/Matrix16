@@ -3,6 +3,7 @@
 #include "ksyscall.h"
 #include "kthread.h"
 #include "kconsole.h"
+#include "kfiles.h"
 #include "matfs16.h"
 #include "utils.h"
 
@@ -25,6 +26,20 @@ static void k_syscall_sys_write(registers_t *regs) {
 
 static void k_syscall_sys_read(registers_t *regs) {
 	uint8_t console;
+	uint16_t bytes_read;
+
+	// actual file descriptors
+	if(regs->bx > 2) {
+		regs->ax = 0;
+		if(regs->bx > (uint16_t)KFILE_INVALID_FD + 2) return;
+
+		if(kfile_read((uint8_t)(regs->bx - 3), regs->cx, regs->ds, regs->dx, &bytes_read)) {
+			regs->ax = bytes_read;
+		}
+		return;
+	}
+
+	// console IO
 	if(!kthread_current_console(&console)) kpanic("User thread has no console!");
 
 	if(regs->bx != 0) {
@@ -120,6 +135,42 @@ static void k_syscall_sys_load(registers_t *regs) {
 	regs->ax = 0;
 }
 
+/* Open a file named in DS:BX. The filename begins with A: or B:. */
+static void k_syscall_sys_open(registers_t* regs) {
+	char __far* user_filename = mk_farptr(regs->ds, regs->bx);
+	char filename[MATFS16_FILENAME_MAXLEN];
+	uint8_t drive_num;
+	uint8_t fd;
+	uint16_t i;
+
+	regs->ax = SYSCALL_INVALID_HANDLE;
+
+	if(user_filename[0] == 'A') drive_num = 0;
+	else if(user_filename[0] == 'B') drive_num = 1;
+	else return;
+	if(user_filename[1] != ':') return;
+
+	for(i = 0; i < MATFS16_FILENAME_MAXLEN; i++) {
+		filename[i] = user_filename[i + 2];
+		if(filename[i] == '\0') break;
+	}
+	if(i == MATFS16_FILENAME_MAXLEN || filename[0] == '\0') return;
+
+	fd = kfile_open(drive_num, filename);
+	if(fd == KFILE_INVALID_FD) return;
+
+	regs->ax = (uint16_t)fd + 3;
+}
+
+static void k_syscall_sys_close(registers_t* regs) {
+	if(regs->bx < 3 || regs->bx > (uint16_t)KFILE_INVALID_FD + 2) {
+		regs->ax = 1;
+		return;
+	}
+
+	regs->ax = kfile_close((uint8_t)(regs->bx - 3)) ? 0 : 1;
+}
+
 void k_syscall_callback(registers_t *regs) {
 	kthread_id_t thread = kthread_cur_thread();
 	if(thread < KTHREAD_USER_TSK0_ID || thread > KTHREAD_USER_RSV_ID) kpanic("Syscall from non-user thread!");
@@ -136,6 +187,12 @@ void k_syscall_callback(registers_t *regs) {
 		break;
 		case SYS_LOAD:
 			k_syscall_sys_load(regs);
+		break;
+		case SYS_OPEN:
+			k_syscall_sys_open(regs);
+		break;
+		case SYS_CLOSE:
+			k_syscall_sys_close(regs);
 		break;
 		default:
 			kpanic("Unknown syscall");

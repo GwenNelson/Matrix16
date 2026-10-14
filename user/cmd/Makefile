@@ -6,7 +6,7 @@ CMD_MAX_SIZE = 28672
 SRC = src
 BUILD = build
 
-all: $(BUILD)/CLS.CMD
+all: $(BUILD)/CLS.CMD $(BUILD)/TYPE.CMD
 
 $(BUILD):
 	mkdir -p $@
@@ -16,7 +16,12 @@ $(BUILD)/CLS.CMD: $(SRC)/cls.asm | $(BUILD)
 	@test "$$(wc -c < $@)" -le $(CMD_MAX_SIZE) || \
 		{ echo "$@ exceeds the 8000h-EFFFh command region"; false; }
 
+$(BUILD)/TYPE.CMD: $(SRC)/type.asm | $(BUILD)
+	$(NASM) -f bin $< -o $@
+	@test "$$(wc -c < $@)" -le $(CMD_MAX_SIZE) || \
+		{ echo "$@ exceeds the 8000h-EFFFh command region"; false; }
+
 clean:
-	rm -f $(BUILD)/CLS.CMD
+	rm -f $(BUILD)/CLS.CMD $(BUILD)/TYPE.CMD
 
 .PHONY: all clean

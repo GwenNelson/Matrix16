@@ -3,6 +3,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "kthread.h"
+
 #define KFILE_INVALID_FD 0xFF
 
 typedef struct file_desc_t {
@@ -11,6 +13,7 @@ typedef struct file_desc_t {
 	uint16_t position;
 	uint16_t block_offset;
 	uint8_t drive_num;
+	kthread_id_t owner;
 	bool used;
 } file_desc_t;
 
@@ -23,8 +26,12 @@ void kfiles_init(uint16_t descriptor_count);
  */
 uint8_t kfile_open(uint8_t drive_num, const char* filename);
 
+/* Close a global file descriptor, returning false if it is not open. */
+bool kfile_close(uint8_t fd);
+
 /*
- * Read up to count bytes at the file's current position into seg:buf.
+ * Read up to count bytes from a descriptor owned by the calling thread at the
+ * file's current position into seg:buf.
  * bytes_read receives the number copied. EOF is a successful short read.
  * If an error follows a partial read, bytes_read reports the bytes already
  * copied and the descriptor remains at its new position.

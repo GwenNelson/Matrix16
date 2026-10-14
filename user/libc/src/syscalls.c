@@ -51,3 +51,29 @@ uint16_t sys_load(const char* filename, void* buffer, uint16_t* length) {
 	if(length != 0) *length = cx;
 	return ax;
 }
+
+uint16_t sys_open(const char* filename) {
+	uint16_t ax = SYS_OPEN;
+
+	__asm__ volatile (
+		"int $0x80"
+		: "+a" (ax)
+		: "b" ((uint16_t)filename)
+		: "memory", "cc"
+	);
+
+	return ax;
+}
+
+uint16_t sys_close(uint16_t handle) {
+	uint16_t ax = SYS_CLOSE;
+
+	__asm__ volatile (
+		"int $0x80"
+		: "+a" (ax)
+		: "b" (handle)
+		: "memory", "cc"
+	);
+
+	return ax;
+}
