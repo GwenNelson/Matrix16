@@ -6,7 +6,7 @@
 #include "matfs16.h"
 
 #define SYSTEM_CFG_TASK_COUNT 6
-#define SYSTEM_CFG_DEFAULT_START_DELAY 55
+#define SYSTEM_CFG_DEFAULT_START_DELAY 25
 
 typedef enum system_cfg_source_t {
 	SYSTEM_CFG_SOURCE_NONE,

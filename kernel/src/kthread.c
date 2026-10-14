@@ -8,18 +8,17 @@
 static kthread_t threads[7]; // statically allocated, because we're targeting a fracking 8086 with 512kb RAM
 
 #define KIDLE_STACK_LEN 512
-#define KEVENT_STACK_LEN 2048
-#define USER_TEST_STACK_LEN 1024
+#define KEVENT_STACK_LEN 1024
 #define USER_KERNEL_STACK_LEN 2048
 
 extern void switch_to(uint16_t ss, uint16_t sp, uint16_t *old_ss,
 	uint16_t *old_sp, uint16_t first_run); // ASM routine we use for switching
 extern void copy_initial_frame(uint16_t seg, uint16_t offset, const uint16_t *frame);
 
-static uint8_t kidle_stack[512]   __attribute__((aligned(2))); // 512 bytes ought to be enough for anyone...
-static uint8_t kevent_stack[2048] __attribute__((aligned(2))); // need something a bit bigger for kevent thread
+static uint8_t kidle_stack[KIDLE_STACK_LEN]   __attribute__((aligned(2))); // 512 bytes ought to be enough for anyone...
+static uint8_t kevent_stack[KEVENT_STACK_LEN] __attribute__((aligned(2))); // need something a bit bigger for kevent thread
 
-static uint8_t kuser_test_stack[4][USER_TEST_STACK_LEN] __attribute__((aligned(2)));
+//static uint8_t kuser_test_stack[4][USER_TEST_STACK_LEN] __attribute__((aligned(2)));
 static uint8_t user_kernel_stacks[4][USER_KERNEL_STACK_LEN] __attribute__((aligned(2)));
 
 /* Indexed by cur_thread in the interrupt stubs; only user task IDs use these. */
@@ -68,74 +67,6 @@ bool kthread_current_console(uint8_t *console) {
 	return true;
 }
 
-void test_task0(void) {
-	kconsole_init(PAGENUM_VC0);
-//	kconsole_switchto(PAGENUM_VC0);
-	kconsole_puts(PAGENUM_VC0, "console 0");
-
-	for(;;) {
-		kconsole_move_cursor(PAGENUM_VC0, 2, 1);
-		kconsole_putc(PAGENUM_VC0, '-');
-		kconsole_move_cursor(PAGENUM_VC0, 2, 1);
-		kconsole_putc(PAGENUM_VC0, '\\');
-		kconsole_move_cursor(PAGENUM_VC0, 2, 1);
-		kconsole_putc(PAGENUM_VC0, '|');
-		kconsole_move_cursor(PAGENUM_VC0, 2, 1);
-		kconsole_putc(PAGENUM_VC0, '/');
-	}
-}
-
-void test_task1(void) {
-	kconsole_init(PAGENUM_VC1);
-//	kconsole_switchto(PAGENUM_VC1);
-	kconsole_puts(PAGENUM_VC1, "console 1");
-
-	for(;;) {
-		kconsole_move_cursor(PAGENUM_VC1, 2, 1);
-		kconsole_putc(PAGENUM_VC1, '-');
-		kconsole_move_cursor(PAGENUM_VC1, 2, 1);
-		kconsole_putc(PAGENUM_VC1, '\\');
-		kconsole_move_cursor(PAGENUM_VC1, 2, 1);
-		kconsole_putc(PAGENUM_VC1, '|');
-		kconsole_move_cursor(PAGENUM_VC1, 2, 1);
-		kconsole_putc(PAGENUM_VC1, '/');
-	}
-}
-
-void test_task2(void) {
-	kconsole_init(PAGENUM_VC2);
-//	kconsole_switchto(PAGENUM_VC2);
-	kconsole_puts(PAGENUM_VC2, "console 2");
-
-	for(;;) {
-		kconsole_move_cursor(PAGENUM_VC2, 2, 1);
-		kconsole_putc(PAGENUM_VC2, '-');
-		kconsole_move_cursor(PAGENUM_VC2, 2, 1);
-		kconsole_putc(PAGENUM_VC2, '\\');
-		kconsole_move_cursor(PAGENUM_VC2, 2, 1);
-		kconsole_putc(PAGENUM_VC2, '|');
-		kconsole_move_cursor(PAGENUM_VC2, 2, 1);
-		kconsole_putc(PAGENUM_VC2, '/');
-	}
-}
-
-void test_task3(void) {
-	kconsole_init(PAGENUM_VC3);
-//	kconsole_switchto(PAGENUM_VC3);
-	kconsole_puts(PAGENUM_VC3, "console 3");
-
-	for(;;) {
-		kconsole_move_cursor(PAGENUM_VC3, 2, 1);
-		kconsole_putc(PAGENUM_VC3, '-');
-		kconsole_move_cursor(PAGENUM_VC3, 2, 1);
-		kconsole_putc(PAGENUM_VC3, '\\');
-		kconsole_move_cursor(PAGENUM_VC3, 2, 1);
-		kconsole_putc(PAGENUM_VC3, '|');
-		kconsole_move_cursor(PAGENUM_VC3, 2, 1);
-		kconsole_putc(PAGENUM_VC3, '/');
-	}
-}
-
 void kevent_kbd_cb(uint8_t page_num) {
 	pending_console_switch  = true;
 	pending_console_pagenum = page_num;
@@ -152,21 +83,7 @@ void kthread_init(void) {
 	// and let's also setup our event thread
 	kconsole_set_switch_cb(&kevent_kbd_cb);
 	kthread_setup(KTHREAD_EVENT_ID,SEG_KERN,&kevent_task,(uint16_t)(&kevent_stack[KEVENT_STACK_LEN-2]), KTHREAD_CONSOLE_NONE);
-
-
-	// temporary silliness - we want to load the first task (probably the shell) into task0 in kmain.c, and HELLO.TSK into task1
-//	kthread_setup(KTHREAD_USER_TSK0_ID, SEG_KERN, &test_task0,
-//		(uint16_t)(&kuser_test_stack[0][USER_TEST_STACK_LEN - 2]), PAGENUM_VC0);
-//	kthread_setup(KTHREAD_USER_TSK1_ID, SEG_KERN, &test_task1,
-//		(uint16_t)(&kuser_test_stack[1][USER_TEST_STACK_LEN - 2]), PAGENUM_VC1);
-	kthread_setup(KTHREAD_USER_TSK2_ID, SEG_KERN, &test_task2,
-		(uint16_t)(&kuser_test_stack[2][USER_TEST_STACK_LEN - 2]), PAGENUM_VC2);
-	kthread_setup(KTHREAD_USER_TSK3_ID, SEG_KERN, &test_task3,
-		(uint16_t)(&kuser_test_stack[3][USER_TEST_STACK_LEN - 2]), PAGENUM_VC3);
-
 }
-
-
 
 void kthread_start(void) {
 	scheduler_ready = true;

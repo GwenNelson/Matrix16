@@ -76,7 +76,6 @@ static void do_start_delay(void) {
 	while(kconsole_getc(PAGENUM_VC0, &ignored))
 		;
 
-	bios_puts("Press any key to start immediately");
 
 	while(remaining != 0) {
 		if(kconsole_getc(PAGENUM_VC0, &ignored)) break;
@@ -149,27 +148,20 @@ static void skip_systemcfg_prompt(void) {
 }
 
 void kernel_main(void) {
-	bios_puts("Matrix16 Kernel loaded!\n\n");
+	bios_puts("Starting Matrix16...\n");
 
-	bios_puts("Trying SYSTEM.CFG...\n");
 	load_system_cfg();
 	skip_systemcfg_prompt();
 
 	if(cfg_errors) {
-		bios_puts("Errors in SYSTEM.CFG, will use defaults, press any key to continue...\n");
-		bios_wait_for_key();
+		bios_puts("Errors in SYSTEM.CFG, defaults loaded\n");
 	}
-
-	bios_puts("\n\n\n");
 
 	install_isr08();
 	install_isr09();
 	install_isr80();
 
-	bios_puts("Starting task scheduler...\n");
 	kthread_init();
-
-	bios_puts("Loading tasks...\n");
 
 	// okay, let's startup task0 first...
 	// for now, i'm gonna make task0 always the shell
