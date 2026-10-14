@@ -2,7 +2,7 @@ BITS 16
 ORG 0x8000
 
 FILE_BUF_SIZE equ 32
-CMD_ENV equ 0x0400 
+CMD_LINE equ 0x0100
 
 SYS_WRITE equ 1
 SYS_READ  equ 2
@@ -14,7 +14,7 @@ SYS_CLOSE equ 6
 entry:
 	call clear_buf
 	; first we need to open the file 
-	mov bx,CMD_ENV ; filename is just in the environment, a C string
+	mov bx,CMD_LINE ; filename is in the command line as a C string
 	mov ax,SYS_OPEN
 	int 0x80
 	

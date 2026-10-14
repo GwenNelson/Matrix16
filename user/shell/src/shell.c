@@ -6,7 +6,7 @@
 
 #include "shell_command.h"
 
-extern uint8_t __shell_environment_start[];
+extern uint8_t __shell_command_line_start[];
 
 #define LINE_LENGTH 80
 
@@ -78,13 +78,14 @@ void shell_mainloop() {
 		printf("A:>");
 		readline(line,sizeof(line));
 
+		__shell_command_line_start[0] = '\0';
 		uppercase(line);
 		cmd_params = strchr(line,' ');
 		if(cmd_params != NULL) {
 			*cmd_params++ = '\0';
 			while(*cmd_params == ' ') cmd_params++;
 			cmd_params_len = strnlen(cmd_params,LINE_LENGTH);
-			memcpy(__shell_environment_start,cmd_params,cmd_params_len+1);
+			memcpy(__shell_command_line_start,cmd_params,cmd_params_len+1);
 		} else {
 			cmd_params_len = 0;
 		}

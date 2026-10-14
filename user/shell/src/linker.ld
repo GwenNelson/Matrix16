@@ -8,6 +8,8 @@ SECTIONS
 	 * exclusive, so each pair also describes the size of its region. */
 	__shell_init_vectors_start = 0x0000;
 	__shell_init_vectors_end = 0x0400;
+	__shell_command_line_start = 0x0100;
+	__shell_command_line_end = 0x0200;
 	__shell_environment_start = 0x0400;
 	__shell_environment_end = 0x0800;
 	__shell_code_start = 0x0800;
