@@ -11,6 +11,7 @@
 #define SYSTEM_CFG_SEEN_SHELL       0x0040
 #define SYSTEM_CFG_SEEN_DEFAULT     0x0080
 #define SYSTEM_CFG_SEEN_START_DELAY 0x0100
+#define SYSTEM_CFG_SEEN_FILES       0x0200
 
 system_cfg_t system_cfg;
 bool cfg_errors;
@@ -74,6 +75,7 @@ static void set_system_cfg_defaults(system_cfg_t* config) {
 	strcpy(config->shell, "SHELL.TSK");
 	config->default_action = SYSTEM_CFG_DEFAULT_SHELL;
 	config->start_delay = SYSTEM_CFG_DEFAULT_START_DELAY;
+	config->files = SYSTEM_CFG_DEFAULT_FILES;
 
 	for(i = 0; i < SYSTEM_CFG_TASK_COUNT; i++) {
 		config->tasks[i].source = SYSTEM_CFG_SOURCE_DEFAULT;
@@ -161,6 +163,13 @@ static char* parse_system_cfg_line(char* line, system_cfg_t* config, uint16_t* s
 		if(*seen & SYSTEM_CFG_SEEN_START_DELAY) return "duplicate statement";
 		if(!parse_system_cfg_uint16(value, &config->start_delay)) return "invalid statement";
 		*seen |= SYSTEM_CFG_SEEN_START_DELAY;
+		return 0;
+	}
+
+	if(strcmp(key, "FILES") == 0) {
+		if(*seen & SYSTEM_CFG_SEEN_FILES) return "duplicate statement";
+		if(!parse_system_cfg_uint16(value, &config->files)) return "invalid statement";
+		*seen |= SYSTEM_CFG_SEEN_FILES;
 		return 0;
 	}
 

@@ -13,6 +13,7 @@
 #include "utils.h"
 #include "waitkey.h"
 #include "task.h"
+#include "kheap.h"
 
 volatile uint16_t timer_ticks;
 
@@ -20,38 +21,6 @@ void k_timer_callback(void) {
 	timer_ticks++;
 	kthread_schedule();
 }
-
-// the shell is configured to run at 2000:0000 - that is, the very first task after the kernel itself
-void load_default_shell() {
-	matfs16_status_t status;
-	uint16_t lba;
-	uint16_t next_lba;
-	uint16_t offset = 0;
-	uint16_t shell_len;
-
-	status = matfs16_locate_file(system_cfg.shell, 0, &lba, &shell_len);
-	if(status != MATFS16_OK || shell_len == 0) kpanic("MISSING SHELL!");
-
-	for(;;) {
-		status = matfs16_load_block(0, lba, 0x2000, offset);
-		if(status != MATFS16_OK) kpanic("FAILED TO LOAD SHELL!");
-
-		status = matfs16_next_block(0, lba, &next_lba);
-		if(status == MATFS16_END_OF_FILE) break;
-		if(status != MATFS16_OK) kpanic("FAILED TO LOAD SHELL!");
-		if(offset == 0xFE00) kpanic("SHELL IS TOO LARGE!");
-
-		lba = next_lba;
-		offset += MATFS16_BLOCK_SIZE;
-	}
-
-	// if we get here, yay! it should be possible to just JMP to it
-//	__asm__ volatile (
-//	    "ljmp $0x2000, $0x0000"
-//	);	
-}
-
-uint8_t buf[512];
 
 static void sleepfor(uint16_t ticks) {
 	uint16_t flags;
@@ -291,6 +260,8 @@ void kernel_main(void) {
 	if(cfg_errors) {
 		bios_puts("Errors in SYSTEM.CFG, defaults loaded\n");
 	}
+
+	kheap_init();
 
 	install_isr08();
 	install_isr09();

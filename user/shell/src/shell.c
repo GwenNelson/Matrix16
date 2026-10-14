@@ -71,7 +71,7 @@ void shell_mainloop() {
 
 	// this is a seriously dumb hack
 	for(;;) {
-		sys_write(1,"Matrix16> ",10);
+		sys_write(1,"A:> ",10);
 		readline(line,sizeof(line));
 
 		command_length = strnlen(line,22);

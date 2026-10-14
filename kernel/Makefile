@@ -42,6 +42,9 @@ $(BUILD)/bioscons.o: $(SRC)/bioscons.c $(SRC)/bioscons.h | $(BUILD)
 $(BUILD)/kpanic.o: $(SRC)/kpanic.c $(SRC)/kpanic.h $(SRC)/bioscons.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/kpanic.c -o $@
 
+$(BUILD)/kheap.o: $(SRC)/kheap.c $(SRC)/kheap.h $(SRC)/kpanic.h | $(BUILD)
+	$(CC) $(CFLAGS) -c $(SRC)/kheap.c -o $@
+
 $(BUILD)/ksyscall.o: $(SRC)/ksyscall.c $(SRC)/ksyscall.h $(SRC)/8086.h $(SRC)/bioscons.h $(SRC)/kpanic.h $(SRC)/utils.h ../include/syscalls.inc | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/ksyscall.c -o $@
 
@@ -63,8 +66,8 @@ $(BUILD)/kthread.o: $(SRC)/kthread.c $(SRC)/kthread.h | $(BUILD)
 $(COMMON_LIBC): $(COMMON_LIBC_INPUTS)
 	$(MAKE) -C ../common/libc/
 
-$(BUILD)/kernel.elf: $(BUILD)/kentry.o $(BUILD)/isr.o $(BUILD)/switchto.o $(BUILD)/waitkey.o $(BUILD)/biosdisk.o $(BUILD)/kmain.o $(BUILD)/parsecfg.o $(BUILD)/bioscons.o $(BUILD)/kpanic.o $(BUILD)/ksyscall.o $(BUILD)/utils.o $(BUILD)/matfs16.o $(BUILD)/task.o $(BUILD)/kconsole.o $(BUILD)/kthread.o $(COMMON_LIBC)
-	$(LD) $(LDFLAGS) -T $(SRC)/kernel.ld -o $@ $^
+$(BUILD)/kernel.elf: $(BUILD)/kentry.o $(BUILD)/isr.o $(BUILD)/switchto.o $(BUILD)/waitkey.o $(BUILD)/biosdisk.o $(BUILD)/kmain.o $(BUILD)/parsecfg.o $(BUILD)/bioscons.o $(BUILD)/kpanic.o $(BUILD)/kheap.o $(BUILD)/ksyscall.o $(BUILD)/utils.o $(BUILD)/matfs16.o $(BUILD)/task.o $(BUILD)/kconsole.o $(BUILD)/kthread.o $(COMMON_LIBC) $(SRC)/kernel.ld
+	$(LD) $(LDFLAGS) -T $(SRC)/kernel.ld -o $@ $(filter-out $(SRC)/kernel.ld,$^)
 
 $(BUILD)/kernel.bin: $(BUILD)/kernel.elf
 	$(OBJCOPY) -O binary $< $@

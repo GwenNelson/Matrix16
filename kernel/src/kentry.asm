@@ -5,6 +5,7 @@ BITS 16
 extern kernel_main
 extern __bss_start
 extern __bss_end
+extern kernel_stack_top
 
 global kernel_start
 
@@ -16,7 +17,7 @@ kernel_start:
 
 	cli
 	mov ss, ax
-	mov sp, 0xFFFE ; our stack is at the end of this segment basically
+	mov sp, kernel_stack_top
 
 	; The loader copies the file image, not the zero-filled .bss section.
 	; DS and ES already address SEG_KERN; clear it before entering C.
