@@ -1,12 +1,14 @@
 NASM    = nasm
 CC      = ia16-elf-gcc
 LD      = ia16-elf-ld
-CFLAGS  = -march=i8088 -Os -ffreestanding -ffixed-es -ffunction-sections -fdata-sections -I../include
+CFLAGS  = -march=i8088 -Os -ffreestanding -ffixed-es -ffunction-sections -fdata-sections -I../include -I../common/libc/include
 LDFLAGS = --gc-sections
 OBJCOPY = ia16-elf-objcopy
 
 SRC     = src
 BUILD   = build
+COMMON_LIBC = ../common/libc/build/libm16c-common.a
+COMMON_LIBC_INPUTS = ../common/libc/Makefile ../common/libc/src/string.c ../common/libc/include/string.h
 
 all: $(BUILD)/kernel.bin
 
@@ -28,10 +30,10 @@ $(BUILD)/switchto.o: $(SRC)/switchto.asm | $(BUILD)
 $(BUILD)/waitkey.o: $(SRC)/waitkey.asm | $(BUILD)
 	$(NASM) -f elf $< -o $@
 
-$(BUILD)/kmain.o: $(SRC)/kmain.c $(SRC)/bioscons.h $(SRC)/biosdisk.h $(SRC)/isr.h $(SRC)/kpanic.h $(SRC)/matfs16.h $(SRC)/parsecfg.h $(SRC)/string.h $(SRC)/utils.h | $(BUILD)
+$(BUILD)/kmain.o: $(SRC)/kmain.c $(SRC)/bioscons.h $(SRC)/biosdisk.h $(SRC)/isr.h $(SRC)/kpanic.h $(SRC)/matfs16.h $(SRC)/parsecfg.h ../common/libc/include/string.h $(SRC)/utils.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/kmain.c -o $@
 
-$(BUILD)/parsecfg.o: $(SRC)/parsecfg.c $(SRC)/parsecfg.h $(SRC)/bioscons.h $(SRC)/matfs16.h $(SRC)/string.h | $(BUILD)
+$(BUILD)/parsecfg.o: $(SRC)/parsecfg.c $(SRC)/parsecfg.h $(SRC)/bioscons.h $(SRC)/matfs16.h ../common/libc/include/string.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/parsecfg.c -o $@
 
 $(BUILD)/bioscons.o: $(SRC)/bioscons.c $(SRC)/bioscons.h | $(BUILD)
@@ -46,10 +48,7 @@ $(BUILD)/ksyscall.o: $(SRC)/ksyscall.c $(SRC)/ksyscall.h $(SRC)/8086.h $(SRC)/bi
 $(BUILD)/utils.o: $(SRC)/utils.c $(SRC)/utils.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/utils.c -o $@
 
-$(BUILD)/string.o: $(SRC)/string.c $(SRC)/string.h | $(BUILD)
-	$(CC) $(CFLAGS) -c $(SRC)/string.c -o $@
-
-$(BUILD)/matfs16.o: $(SRC)/matfs16.c $(SRC)/matfs16.h | $(BUILD)
+$(BUILD)/matfs16.o: $(SRC)/matfs16.c $(SRC)/matfs16.h ../common/libc/include/string.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/matfs16.c -o $@
 
 $(BUILD)/task.o: $(SRC)/task.c $(SRC)/task.h $(SRC)/mtsk16.h $(SRC)/matfs16.h $(SRC)/utils.h | $(BUILD)
@@ -61,7 +60,10 @@ $(BUILD)/kconsole.o: $(SRC)/kconsole.c $(SRC)/kconsole.h | $(BUILD)
 $(BUILD)/kthread.o: $(SRC)/kthread.c $(SRC)/kthread.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/kthread.c -o $@
 
-$(BUILD)/kernel.elf: $(BUILD)/kentry.o $(BUILD)/isr.o $(BUILD)/switchto.o $(BUILD)/waitkey.o $(BUILD)/biosdisk.o $(BUILD)/kmain.o $(BUILD)/parsecfg.o $(BUILD)/bioscons.o $(BUILD)/kpanic.o $(BUILD)/ksyscall.o $(BUILD)/utils.o $(BUILD)/string.o $(BUILD)/matfs16.o $(BUILD)/task.o $(BUILD)/kconsole.o $(BUILD)/kthread.o
+$(COMMON_LIBC): $(COMMON_LIBC_INPUTS)
+	$(MAKE) -C ../common/libc/
+
+$(BUILD)/kernel.elf: $(BUILD)/kentry.o $(BUILD)/isr.o $(BUILD)/switchto.o $(BUILD)/waitkey.o $(BUILD)/biosdisk.o $(BUILD)/kmain.o $(BUILD)/parsecfg.o $(BUILD)/bioscons.o $(BUILD)/kpanic.o $(BUILD)/ksyscall.o $(BUILD)/utils.o $(BUILD)/matfs16.o $(BUILD)/task.o $(BUILD)/kconsole.o $(BUILD)/kthread.o $(COMMON_LIBC)
 	$(LD) $(LDFLAGS) -T $(SRC)/kernel.ld -o $@ $^
 
 $(BUILD)/kernel.bin: $(BUILD)/kernel.elf

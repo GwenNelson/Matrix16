@@ -1,8 +1,8 @@
-.PHONY: all clean kernel kernel-clean stage1 stage1-clean stage2 stage2-clean fsgen fsgen-clean taskgen taskgen-clean shell shell-clean run
+.PHONY: all clean kernel kernel-clean stage1 stage1-clean stage2 stage2-clean fsgen fsgen-clean taskgen taskgen-clean common-libc common-libc-clean user-libc user-libc-clean shell shell-clean run
 
 all: rootfs.img kernel
 
-kernel:
+kernel: common-libc
 	$(MAKE) -C kernel/
 
 kernel-clean:
@@ -32,7 +32,19 @@ taskgen:
 taskgen-clean:
 	$(MAKE) -C taskgen/ clean
 
-shell:
+common-libc:
+	$(MAKE) -C common/libc/
+
+common-libc-clean:
+	$(MAKE) -C common/libc/ clean
+
+user-libc:
+	$(MAKE) -C user/libc/
+
+user-libc-clean:
+	$(MAKE) -C user/libc/ clean
+
+shell: common-libc user-libc
 	$(MAKE) -C user/shell/
 
 shell-clean:
@@ -72,5 +84,5 @@ run: rootfs.img kernel
 	qemu-system-i386 \
 		-drive file=rootfs.img,format=raw,if=floppy,index=0
 
-clean: stage1-clean stage2-clean kernel-clean fsgen-clean taskgen-clean shell-clean
+clean: stage1-clean stage2-clean kernel-clean fsgen-clean taskgen-clean common-libc-clean user-libc-clean shell-clean
 	rm -f user/build/SHELL.BIN user/build/HELLO.BIN rootfs/SHELL.TSK rootfs/HELLO.TSK rootfs.img

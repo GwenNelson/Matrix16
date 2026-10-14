@@ -48,6 +48,13 @@ static void k_syscall_sys_read(registers_t *regs) {
 	regs->ax = read;
 }
 
+static void k_syscall_sys_get_console(registers_t *regs) {
+	uint8_t console;
+
+	if(kthread_current_console(&console)) regs->ax = console;
+	else regs->ax = SYSCALL_CONSOLE_INVALID;
+}
+
 void k_syscall_callback(registers_t *regs) {
 	kthread_id_t thread = kthread_cur_thread();
 	if(thread < KTHREAD_USER_TSK0_ID || thread > KTHREAD_USER_RSV_ID) kpanic("Syscall from non-user thread!");
@@ -58,6 +65,9 @@ void k_syscall_callback(registers_t *regs) {
 		break;
 		case SYS_READ:
 			k_syscall_sys_read(regs);
+		break;
+		case SYS_GET_CONSOLE:
+			k_syscall_sys_get_console(regs);
 		break;
 		default:
 			kpanic("Unknown syscall");

@@ -1,32 +1,8 @@
 #include <stdint.h>
 
-#include <syscalls.inc>
+#include <syscalls.h>
 
 #define LINE_LENGTH 80
-
-static void sys_write(const char* buffer, uint16_t length) {
-	uint16_t ax = SYS_WRITE;
-
-	__asm__ volatile (
-		"int $0x80"
-		: "+a" (ax)
-		: "b" ((uint16_t)1), "c" (length), "d" ((uint16_t)buffer)
-		: "memory", "cc"
-	);
-}
-
-static uint16_t sys_read(char* buffer, uint16_t length) {
-	uint16_t ax = SYS_READ;
-
-	__asm__ volatile (
-		"int $0x80"
-		: "+a" (ax)
-		: "b" ((uint16_t)0), "c" (length), "d" ((uint16_t)buffer)
-		: "memory", "cc"
-	);
-
-	return ax;
-}
 
 static uint16_t readline(char* line, uint16_t capacity) {
 	uint16_t length = 0;
