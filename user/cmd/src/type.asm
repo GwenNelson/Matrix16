@@ -13,7 +13,6 @@ SYS_CLOSE equ 6
 
 entry:
 	call clear_buf
-	call nl
 	; first we need to open the file 
 	mov bx,CMD_ENV ; filename is just in the environment, a C string
 	mov ax,SYS_OPEN
@@ -57,6 +56,7 @@ entry:
 	mov ax, SYS_CLOSE
 	int 0x80
 
+	call nl
 	jmp exit
 
 open_error:
@@ -78,6 +78,7 @@ nl:
 	ret
 
 clear_buf:
+	cld
 	push ax
 	push cx
 	push di
