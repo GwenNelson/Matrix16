@@ -2,6 +2,9 @@ bits 16
 ; uint16_t bios_read_sector(uint16_t es, uint16_t bx,
 ;                           uint16_t cylinder, uint16_t head,
 ;                           uint16_t sector, uint16_t drive);
+; uint16_t bios_write_sector(uint16_t es, uint16_t bx,
+;                            uint16_t cylinder, uint16_t head,
+;                            uint16_t sector, uint16_t drive);
 
 global bios_read_sector
 
@@ -33,6 +36,41 @@ bios_read_sector:
     xor  ah, ah           ; return it as uint16_t
 
 .done:
+    pop  es
+    pop  bx
+    pop  bp
+    ret
+
+global bios_write_sector
+
+bios_write_sector:
+    push bp
+    mov  bp, sp
+
+    push bx
+    push es
+
+    mov  ax, [bp+4]      ; ES
+    mov  es, ax
+    mov  bx, [bp+6]      ; BX source offset
+
+    mov  ch, [bp+8]      ; cylinder
+    mov  dh, [bp+10]     ; head
+    mov  cl, [bp+12]     ; sector
+    mov  dl, [bp+14]     ; drive
+
+    mov  ax, 0x0301      ; AH=03 write, AL=1 sector
+    int  0x13
+    jc   .write_error
+
+    xor  ax, ax           ; return 0
+    jmp  .write_done
+
+.write_error:
+    mov  al, ah           ; return BIOS error code
+    xor  ah, ah
+
+.write_done:
     pop  es
     pop  bx
     pop  bp

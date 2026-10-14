@@ -1,12 +1,21 @@
 NASM = nasm
+CC = ia16-elf-gcc
+LD = ia16-elf-ld
+OBJCOPY = ia16-elf-objcopy
 CMD_MAX_SIZE = 28672
+CFLAGS = -march=i8088 -Os -ffreestanding -ffixed-ds -ffixed-es -ffunction-sections -fdata-sections -I../../include -I../../common/libc/include -I../libc/include
+LDFLAGS = --gc-sections
 
 .DELETE_ON_ERROR:
 
 SRC = src
 BUILD = build
+COMMON_LIBC = ../../common/libc/build/libm16c-common.a
+COMMON_LIBC_INPUTS = ../../common/libc/Makefile ../../common/libc/src/string.c ../../common/libc/include/string.h
+USER_LIBC = ../libc/build/libm16c-user.a
+USER_LIBC_INPUTS = ../libc/Makefile ../libc/src/printf.c ../libc/src/syscalls.c ../libc/include/stdio.h ../libc/include/syscalls.h ../../include/syscalls.inc
 
-all: $(BUILD)/CLS.CMD $(BUILD)/TYPE.CMD $(BUILD)/DIR.CMD
+all: $(BUILD)/CLS.CMD $(BUILD)/TYPE.CMD $(BUILD)/DIR.CMD $(BUILD)/SET.CMD $(BUILD)/HELP.CMD $(BUILD)/FORMAT.CMD
 
 $(BUILD):
 	mkdir -p $@
@@ -26,7 +35,37 @@ $(BUILD)/DIR.CMD: $(SRC)/dir.asm | $(BUILD)
 	@test "$$(wc -c < $@)" -le $(CMD_MAX_SIZE) || \
 		{ echo "$@ exceeds the 8000h-EFFFh command region"; false; }
 
+$(BUILD)/SET.CMD: $(SRC)/set.asm | $(BUILD)
+	$(NASM) -f bin $< -o $@
+	@test "$$(wc -c < $@)" -le $(CMD_MAX_SIZE) || \
+		{ echo "$@ exceeds the 8000h-EFFFh command region"; false; }
+
+$(BUILD)/HELP.CMD: $(SRC)/help.asm $(SRC)/help.txt | $(BUILD)
+	$(NASM) -f bin $< -o $@
+	@test "$$(wc -c < $@)" -le $(CMD_MAX_SIZE) || \
+		{ echo "$@ exceeds the 8000h-EFFFh command region"; false; }
+
+$(BUILD)/format_entry.o: $(SRC)/format_entry.asm | $(BUILD)
+	$(NASM) -f elf $< -o $@
+
+$(BUILD)/format.o: $(SRC)/format.c ../libc/include/syscalls.h ../../include/syscalls.inc | $(BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(COMMON_LIBC): $(COMMON_LIBC_INPUTS)
+	$(MAKE) -C ../../common/libc/
+
+$(USER_LIBC): $(USER_LIBC_INPUTS)
+	$(MAKE) -C ../libc/
+
+$(BUILD)/format.elf: $(BUILD)/format_entry.o $(BUILD)/format.o $(USER_LIBC) $(COMMON_LIBC) $(SRC)/format.ld
+	$(LD) $(LDFLAGS) -Map $(BUILD)/format.map -T $(SRC)/format.ld -o $@ $(filter-out $(SRC)/format.ld,$^)
+
+$(BUILD)/FORMAT.CMD: $(BUILD)/format.elf
+	$(OBJCOPY) -O binary $< $@
+	@test "$$(wc -c < $@)" -le $(CMD_MAX_SIZE) || \
+		{ echo "$@ exceeds the 8000h-EFFFh command region"; false; }
+
 clean:
-	rm -f $(BUILD)/CLS.CMD $(BUILD)/TYPE.CMD $(BUILD)/DIR.CMD
+	rm -f $(BUILD)/CLS.CMD $(BUILD)/TYPE.CMD $(BUILD)/DIR.CMD $(BUILD)/SET.CMD $(BUILD)/HELP.CMD $(BUILD)/format_entry.o $(BUILD)/format.o $(BUILD)/format.elf $(BUILD)/format.map $(BUILD)/FORMAT.CMD
 
 .PHONY: all clean

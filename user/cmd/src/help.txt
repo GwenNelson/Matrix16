@@ -1,0 +1,132 @@
+                          Welcome to Matrix16!
+                          ====================
+
+ Matrix16 is a multitasking realmode operating system for IBM PC compatibles, 
+ in particular the Amstrad PC1512 and similar platforms. The kernel is
+ optimized for 512kb RAM and up to 6 tasks (4 onscreen, 2 on serial consoles)
+
+ To get started, here's some basic usage information:
+
+	* Switch consoles with ctrl-alt-F1 to ctrl-alt-F4
+	  Assuming you have the default configuration in SYSTEM.CFG
+	 
+	* Right now, you are in the shell, all commands are in .CMD format
+	  .CMD files are linked to run at 0x8000 and the primary way to
+	  interact with the shell - this program you are currently interacting
+	  with is HELP.CMD
+
+	* To get a list of other commands, try typing DIR A:*.CMD
+
+	* The system is inspired by, but not necessarily compatible with,
+	  MS-DOS/PC-DOS, CP/M and UNIX to varying degrees
+
+	* In general, commands work like in DOS, the text file format and
+	  terminal more like UNIX
+ Regarding the difference between TSK and CMD files
+ ==================================================
+
+ Matrix16 uses TSK files for "tasks", such as SHELL.TSK - a task file can use
+ an entire 64kb segment in RAM, and is a serialized running program state.
+
+ When you hit ctrl-alt-s, you will be offered the option to save a running task
+ to disk so it can be restarted later - you may save a task file to any
+ MATFS16 formatted floppy.
+
+ Once booted, the kernel and any startup tasks are memory-resident, so you can
+ remove the boot floppy unless you need anything on it (such as .CMD files).
+
+ CMD files are the commands used by the shell, nearly all commands are in CMD
+ files, not internal to SHELL.TSK.
+
+ Most people wanting to write simple programs will probably find CMD files
+ the best format for their programs, but note that only approximately 27kb
+ of code and data is available to a CMD program.
+
+ It is of course also possible to produce a program as a TSK file by linking it
+ with the startup stub, see the developer's guide for more information. 
+
+
+ The MATFS16 filesystem
+ ======================
+
+ Matrix16 uses a custom block-based filesystem named MATFS16.
+ MATFS16 files can have names up to 25 characters long and stored in blocks.
+
+ A block is 512 bytes to match the sector size. Therefore, a file always takes
+ up a minimum of 512 bytes even if you do not use all 512 bytes.
+
+ Before using a floppy with MATFS16, you will need to format it.
+
+ To format a disk of course, you will need FORMAT.CMD.
+
+ Try inserting a spare disk in your second floppy drive and type this:
+
+	FORMAT B:
+
+ After a warning about data loss (which you should absolutely listen to), if
+ you are confident you're okay with losing the contents of that floppy, confirm
+ the operation and wait.
+
+ You will then be able to copy the bootloader and kernel to create a new
+ boot floppy with the following command:
+
+	COPYSYS B:
+
+ You can then copy your own TSK files to this floppy using the COPY command 
+ from the shell, or you can create new TSK files at any point from the 
+ ctrl-alt-s menu and save to drive B. This will snapshot whatever is running.
+
+ When saving a task, you can optionally configure it as one of the defaults in
+ the superblock. The superblock has 4 slots for the 4 virtual consoles.
+
+ If you do not have a SYSTEM.CFG on your boot floppy, by default the kernel 
+ will check the superblock to find what tasks to launch on startup.
+
+ Matrix16 currently provides 4 task slots from 0-3 intended for the virtual
+ consoles (VCs), and 2 more (task 4 and task 5) intended for serial consoles.
+
+ Be warned, if you modify your superblock slots so that all 4 slots point to
+ the wrong tasks, you may find your system unbootable.
+
+ It is strongly recommended that you leave at least one superblock slot empty
+ or use only SYSTEM.CFG so that you can skip at startup with F8.
+
+ On the other hand, some users may use the "save all tasks" feature from the
+ save menu so that they can power down their system and restore all tasks at
+ next boot.
+
+	Tip: try saving all your tasks to a floppy in drive B:, then next boot
+	     use that floppy to boot from, and alternate over time so you can
+	     hold an archive of backups.
+
+ LIMITATIONS ON TASK SAVING
+ ==========================
+
+ A running task can NOT be saved if it has any open file handles - this is 
+ by design, because we can't guarantee the file won't change between when you 
+ save the task and when you restore it.
+
+ If you try to save a running task to disk with open file handles, it will
+ fail with an error message.
+
+ Additionally, it is obviously not possible to restore the state of anything
+ remote such as through a modem connection, and the task save mechanism does
+ not attempt to snapshot the filesystem.
+
+ Tasks also by design don't have much in the way of IPC at present. This could
+ be added at some point - but it's not really a useful thing on this platform.
+
+ Final remarks
+ =============
+
+ I wrote this system as a hobbyist project and as a gift for my kid's PC1512
+
+ If you're reading, hope you like it, gimme feature requests and bug reports.
+ Should the TARDIS appear and take us back to the 1980s, this is how we'd get
+ rich.
+
+ Now you know :)
+
+
+ 
+

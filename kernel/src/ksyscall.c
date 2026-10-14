@@ -171,6 +171,30 @@ static void k_syscall_sys_close(registers_t* regs) {
 	regs->ax = kfile_close((uint8_t)(regs->bx - 3)) ? 0 : 1;
 }
 
+static void k_syscall_sys_write_block(registers_t* regs) {
+	matfs16_status_t status;
+
+	if(regs->bx > 1 || regs->cx >= MATFS16_BLOCK_COUNT || regs->dx > 0xFE00) {
+		regs->ax = 1;
+		return;
+	}
+
+	status = matfs16_store_block((uint8_t)regs->bx, regs->cx, regs->ds, regs->dx);
+	regs->ax = (status == MATFS16_OK) ? 0 : 1;
+}
+
+static void k_syscall_sys_read_block(registers_t* regs) {
+	matfs16_status_t status;
+
+	if(regs->bx > 1 || regs->cx >= MATFS16_BLOCK_COUNT || regs->dx > 0xFE00) {
+		regs->ax = 1;
+		return;
+	}
+
+	status = matfs16_load_block((uint8_t)regs->bx, regs->cx, regs->ds, regs->dx);
+	regs->ax = (status == MATFS16_OK) ? 0 : 1;
+}
+
 void k_syscall_callback(registers_t *regs) {
 	kthread_id_t thread = kthread_cur_thread();
 	if(thread < KTHREAD_USER_TSK0_ID || thread > KTHREAD_USER_RSV_ID) kpanic("Syscall from non-user thread!");
@@ -193,6 +217,12 @@ void k_syscall_callback(registers_t *regs) {
 		break;
 		case SYS_CLOSE:
 			k_syscall_sys_close(regs);
+		break;
+		case SYS_WRITE_BLOCK:
+			k_syscall_sys_write_block(regs);
+		break;
+		case SYS_READ_BLOCK:
+			k_syscall_sys_read_block(regs);
 		break;
 		default:
 			kpanic("Unknown syscall");

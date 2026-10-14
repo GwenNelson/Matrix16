@@ -77,3 +77,29 @@ uint16_t sys_close(uint16_t handle) {
 
 	return ax;
 }
+
+uint16_t sys_write_block(uint8_t drive_no, uint16_t lba, const void* buffer) {
+	uint16_t ax = SYS_WRITE_BLOCK;
+
+	__asm__ volatile (
+		"int $0x80"
+		: "+a" (ax)
+		: "b" ((uint16_t)drive_no), "c" (lba), "d" ((uint16_t)buffer)
+		: "memory", "cc"
+	);
+
+	return ax;
+}
+
+uint16_t sys_read_block(uint8_t drive_no, uint16_t lba, void* buffer) {
+	uint16_t ax = SYS_READ_BLOCK;
+
+	__asm__ volatile (
+		"int $0x80"
+		: "+a" (ax)
+		: "b" ((uint16_t)drive_no), "c" (lba), "d" ((uint16_t)buffer)
+		: "memory", "cc"
+	);
+
+	return ax;
+}

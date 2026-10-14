@@ -453,6 +453,24 @@ matfs16_status_t matfs16_load_block(uint8_t drive_no, uint16_t lba, uint16_t seg
 	return MATFS16_OK;
 }
 
+matfs16_status_t matfs16_store_block(uint8_t drive_no, uint16_t lba, uint16_t seg, uint16_t buf) {
+	uint16_t c;
+	uint16_t h;
+	uint16_t s;
+	uint16_t bios_error;
+
+	if(drive_no > 1 || lba >= MATFS16_BLOCK_COUNT || buf > 0xFE00) return MATFS16_ERR_INVALID_ARGUMENT;
+
+	lba2chs(lba, &c, &h, &s);
+	acquire_bios_lock();
+	bios_error = bios_write_sector(seg, buf, c, h, s, drive_no);
+	release_bios_lock();
+
+	if(bios_error != 0) return MATFS16_ERR_DISK;
+
+	return MATFS16_OK;
+}
+
 matfs16_status_t matfs16_next_block(uint8_t drive_no, uint16_t lba, uint16_t* next) {
 	uint8_t* scratch_buf;
 	matfs16_status_t status;

@@ -15,11 +15,11 @@ SYS_CLOSE equ 6
 entry:
 	call clear_buf
 
-	; let's first check if we have A: or B: or a null string
-	call check_cmdline
+	; Select a drive and a filename pattern. A: is the default drive.
+	call parse_cmdline
 
 	; if we get here, let's open the directory
-	mov bx, CMD_LINE
+	mov bx, drive_name
 	mov ax, SYS_OPEN
 	int 0x80
 
@@ -63,19 +63,23 @@ dump_entries:
 	mov cx,15
 	; si has the address of 15 entries, cx is our "remaining" counter
 .loop:
+	push cx
 	push si
 	add si,6
 
 	cmp byte [si],0
 	je .advance
 
-	push cx
+	mov di,[pattern_ptr]
+	call matches_pattern
+	jc .advance
+
 	call strout
 	call nl
-	pop cx
 
 .advance:
 	pop si
+	pop cx
 	add si,32
 
 	dec cx
@@ -131,36 +135,110 @@ clear_buf:
 	pop ax
 	ret
 
-check_cmdline:
-	mov al, [CMD_LINE]
 
+; Parse an optional A:/B: prefix and leave the filename pattern in place.
+; A missing drive prefix means A:, and an empty pattern means all files.
+parse_cmdline:
+	mov byte [drive_name], 'A'
+	mov si, CMD_LINE
+	mov word [pattern_ptr], all_files_pattern
+
+	mov al, [CMD_LINE]
 	test al, al
-	jz .empty
+	jz .done
+
+	cmp byte [CMD_LINE+1], ':'
+	jne .pattern_only
 
 	cmp al, 'A'
-	je .check_colon
+	je .drive_prefix
 	cmp al, 'B'
-	je .check_colon
-	jmp .invalid
+	jne .invalid_drive
 
-.check_colon:
-	cmp byte [CMD_LINE+1], ':'
-	jne .invalid
+.drive_prefix:
+	mov [drive_name], al
+	add si, 2
+	cmp byte [si], 0
+	je .done
+	mov [pattern_ptr], si
+	ret
 
-	cmp byte [CMD_LINE+2], 0
-	jne .invalid
+.pattern_only:
+	mov [pattern_ptr], si
+	ret
 
-	jmp .valid
-
-.empty:
-	mov byte [CMD_LINE], 'A'
-	mov byte [CMD_LINE+1], ':'
-	mov byte [CMD_LINE+2], 0
-	jmp .valid
-
-.invalid:
+.invalid_drive:
 	jmp usage_error
-.valid:
+
+.done:
+	ret
+
+; Match a NUL-terminated directory name at SI against the pattern at DI.
+; '*' matches zero or more characters and '?' matches exactly one.
+; Carry is clear for a match and set for no match.
+matches_pattern:
+	push ax
+	push bx
+	push si
+	push di
+	mov word [star_pattern], 0
+	mov word [star_name], 0
+
+.match:
+	mov al, [di]
+	cmp al, '*'
+	jne .not_star
+	inc di
+	mov [star_pattern], di
+	mov [star_name], si
+	jmp .match
+
+.not_star:
+	mov bl, [si]
+	test al, al
+	je .pattern_end
+	cmp al, '?'
+	je .question
+	cmp al, bl
+	je .advance
+	jmp .try_star
+
+.question:
+	test bl, bl
+	jz .try_star
+
+.advance:
+	inc si
+	inc di
+	jmp .match
+
+.pattern_end:
+	test bl, bl
+	jz .matched
+
+.try_star:
+	cmp word [star_pattern], 0
+	je .not_matched
+	mov si, [star_name]
+	cmp byte [si], 0
+	je .not_matched
+	inc si
+	mov [star_name], si
+	mov di, [star_pattern]
+	jmp .match
+
+.matched:
+	clc
+	jmp .return
+
+.not_matched:
+	stc
+
+.return:
+	pop di
+	pop si
+	pop bx
+	pop ax
 	ret
 
 strout:
@@ -207,7 +285,7 @@ fd_var:
 	dw 0
 
 usage_error_str:
-	db "Usage: DIR [A: | B:]",10
+	db "Usage: DIR [A:|B:][pattern]",10
 usage_error_str_end:
 
 open_error_str:
@@ -217,9 +295,16 @@ open_error_str_end:
 nlstr:
 	db 10
 
-filename_buf:
-	db "A:"
-	resb MAX_FILENAME_LEN
+drive_name:
+	db 'A', ':', 0
+all_files_pattern:
+	db '*', 0
+pattern_ptr:
+	dw 0
+star_pattern:
+	dw 0
+star_name:
+	dw 0
 
 file_buf:
 	resb FILE_BUF_SIZE

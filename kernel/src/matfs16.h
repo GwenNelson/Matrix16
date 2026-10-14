@@ -123,6 +123,14 @@ matfs16_status_t matfs16_load_block(
 	uint16_t buf
 );
 
+/* Write exactly one 512-byte sector at absolute disk LBA lba from seg:buf. */
+matfs16_status_t matfs16_store_block(
+	uint8_t drive_no,
+	uint16_t lba,
+	uint16_t seg,
+	uint16_t buf
+);
+
 /*
  * Follow the blockchain entry for the data block at absolute disk LBA lba.
  *
