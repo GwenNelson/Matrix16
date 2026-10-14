@@ -24,6 +24,9 @@ $(BUILD)/entry.o: $(SRC)/entry.asm | $(BUILD)
 $(BUILD)/shell_vectors.o: $(SRC)/shell_vectors.asm | $(BUILD)
 	$(NASM) -f elf $< -o $@
 
+$(BUILD)/shell_command.o: $(SRC)/shell_command.asm | $(BUILD)
+	$(NASM) -f elf $< -o $@
+
 $(BUILD)/shell.o: $(SRC)/shell.c ../libc/include/syscalls.h ../../include/syscalls.inc | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -33,13 +36,13 @@ $(COMMON_LIBC): $(COMMON_LIBC_INPUTS)
 $(USER_LIBC): $(USER_LIBC_INPUTS)
 	$(MAKE) -C ../libc/
 
-$(BUILD)/shell.elf: $(BUILD)/shell_vectors.o $(BUILD)/entry.o $(BUILD)/shell.o $(USER_LIBC) $(COMMON_LIBC) $(SRC)/linker.ld
-	$(LD) $(LDFLAGS) -Map $(BUILD)/shell.map -T $(SRC)/linker.ld -o $@ $(BUILD)/shell_vectors.o $(BUILD)/entry.o $(BUILD)/shell.o $(USER_LIBC) $(COMMON_LIBC)
+$(BUILD)/shell.elf: $(BUILD)/shell_vectors.o $(BUILD)/entry.o $(BUILD)/shell_command.o $(BUILD)/shell.o $(USER_LIBC) $(COMMON_LIBC) $(SRC)/linker.ld
+	$(LD) $(LDFLAGS) -Map $(BUILD)/shell.map -T $(SRC)/linker.ld -o $@ $(BUILD)/shell_vectors.o $(BUILD)/entry.o $(BUILD)/shell_command.o $(BUILD)/shell.o $(USER_LIBC) $(COMMON_LIBC)
 
 $(BUILD)/SHELL.BIN: $(BUILD)/shell.elf
 	$(OBJCOPY) -O binary $< $@
 
 clean:
-	rm -f $(BUILD)/shell_vectors.o $(BUILD)/entry.o $(BUILD)/shell.o $(BUILD)/shell.elf $(BUILD)/shell.map $(BUILD)/SHELL.BIN
+	rm -f $(BUILD)/shell_vectors.o $(BUILD)/entry.o $(BUILD)/shell_command.o $(BUILD)/shell.o $(BUILD)/shell.elf $(BUILD)/shell.map $(BUILD)/SHELL.BIN
 
 .PHONY: all clean

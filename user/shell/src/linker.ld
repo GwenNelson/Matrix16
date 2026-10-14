@@ -17,13 +17,16 @@ SECTIONS
 	__shell_stack_start = 0xF000;
 	__shell_stack_end = 0x10000;
 
-	/* Offset zero contains only the required three-byte near jump. */
+	/* Offset zero contains the startup jump. The return-to-shell vector is
+	 * the next three-byte entry, at the fixed offset 0003h. */
 	.shell_vectors 0x0000 : {
 		KEEP(*(.shell_vectors))
 	}
 
-	ASSERT(SIZEOF(.shell_vectors) == 3,
-	       "shell entry vector must be exactly one three-byte near jump")
+	ASSERT(shell_return_vector == 0x0003,
+	       "return-to-shell vector must be at offset 0003h")
+	ASSERT(SIZEOF(.shell_vectors) == 6,
+	       "shell vector table must contain two three-byte near jumps")
 
 	. = __shell_code_start;
 
