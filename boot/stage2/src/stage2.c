@@ -227,6 +227,8 @@ void stage2_main(void) {
 		if(!load_contiguous_kernel()) {
 			bios_puts("FAIL\n");
 			for(;;);
+		} else {
+			bios_puts("OK\n");
 		}
 	} else {
 		bios_puts("\n\nnon-contiguous kernel not yet supported!\n");

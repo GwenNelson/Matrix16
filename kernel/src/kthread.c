@@ -135,9 +135,9 @@ void kevent_kbd_cb(uint8_t page_num) {
 }
 
 void kthread_init(void) {
-	for(uint8_t i = 0; i < 4; i++)
-		user_kernel_stack_tops[KTHREAD_USER_TSK0_ID + i] =
-			(uint16_t)&user_kernel_stacks[i][USER_KERNEL_STACK_LEN];
+	for(uint8_t i = 0; i < 4; i++) {
+		user_kernel_stack_tops[KTHREAD_USER_TSK0_ID + i] = (uint16_t)&user_kernel_stacks[i][USER_KERNEL_STACK_LEN];
+	}
 
 	// let's first setup the idle thread
 	kthread_setup(KTHREAD_IDLE_ID, SEG_KERN,&kidle_task, (uint16_t)(&kidle_stack[KIDLE_STACK_LEN-2]));
