@@ -23,8 +23,11 @@ $(BUILD)/isr.o: $(SRC)/isr.asm | $(BUILD)
 $(BUILD)/switchto.o: $(SRC)/switchto.asm | $(BUILD)
 	$(NASM) -f elf $< -o $@
 
-$(BUILD)/kmain.o: $(SRC)/kmain.c $(SRC)/bioscons.h $(SRC)/biosdisk.h $(SRC)/isr.h $(SRC)/kpanic.h $(SRC)/string.h $(SRC)/utils.h | $(BUILD)
+$(BUILD)/kmain.o: $(SRC)/kmain.c $(SRC)/bioscons.h $(SRC)/biosdisk.h $(SRC)/isr.h $(SRC)/kpanic.h $(SRC)/matfs16.h $(SRC)/parsecfg.h $(SRC)/string.h $(SRC)/utils.h | $(BUILD)
 	$(CC) -march=i8088 -ffreestanding -c $(SRC)/kmain.c -o $@
+
+$(BUILD)/parsecfg.o: $(SRC)/parsecfg.c $(SRC)/parsecfg.h $(SRC)/bioscons.h $(SRC)/matfs16.h $(SRC)/string.h | $(BUILD)
+	$(CC) -march=i8088 -ffreestanding -c $(SRC)/parsecfg.c -o $@
 
 $(BUILD)/bioscons.o: $(SRC)/bioscons.c $(SRC)/bioscons.h | $(BUILD)
 	$(CC) -march=i8088 -ffreestanding -c $(SRC)/bioscons.c -o $@
@@ -50,7 +53,7 @@ $(BUILD)/kconsole.o: $(SRC)/kconsole.c $(SRC)/kconsole.h | $(BUILD)
 $(BUILD)/kthread.o: $(SRC)/kthread.c $(SRC)/kthread.h | $(BUILD)
 	$(CC) -march=i8088 -Os -ffreestanding -c $(SRC)/kthread.c -o $@
 
-$(BUILD)/kernel.elf: $(BUILD)/kentry.o $(BUILD)/isr.o $(BUILD)/switchto.o $(BUILD)/biosdisk.o $(BUILD)/kmain.o $(BUILD)/bioscons.o $(BUILD)/kpanic.o $(BUILD)/ksyscall.o $(BUILD)/utils.o $(BUILD)/string.o $(BUILD)/matfs16.o $(BUILD)/kconsole.o $(BUILD)/kthread.o
+$(BUILD)/kernel.elf: $(BUILD)/kentry.o $(BUILD)/isr.o $(BUILD)/switchto.o $(BUILD)/biosdisk.o $(BUILD)/kmain.o $(BUILD)/parsecfg.o $(BUILD)/bioscons.o $(BUILD)/kpanic.o $(BUILD)/ksyscall.o $(BUILD)/utils.o $(BUILD)/string.o $(BUILD)/matfs16.o $(BUILD)/kconsole.o $(BUILD)/kthread.o
 	$(LD) -T $(SRC)/kernel.ld -o $@ $^
 
 $(BUILD)/kernel.bin: $(BUILD)/kernel.elf
