@@ -1,4 +1,4 @@
-.PHONY: all clean kernel kernel-clean stage1 stage1-clean stage2 stage2-clean fsgen fsgen-clean taskgen taskgen-clean common-libc common-libc-clean user-libc user-libc-clean shell shell-clean run
+.PHONY: all clean kernel kernel-clean stage1 stage1-clean stage2 stage2-clean fsgen fsgen-clean taskgen taskgen-clean common-libc common-libc-clean user-libc user-libc-clean shell shell-clean cmds cmds-clean run
 
 all: rootfs.img kernel
 
@@ -52,6 +52,14 @@ shell-clean:
 
 user/shell/build/SHELL.BIN: shell
 
+cmds:
+	$(MAKE) -C user/cmd/
+
+cmds-clean:
+	$(MAKE) -C user/cmd/ clean
+
+user/cmd/build/CLS.CMD: cmds
+
 rootfs/SHELL.TSK: user/shell/build/SHELL.BIN taskgen
 	mkdir -p rootfs
 	./taskgen/taskgen $< $@
@@ -70,13 +78,14 @@ boot/stage2/build/stage2.bin: stage2
 
 kernel/build/kernel.bin: kernel
 
-rootfs.img: boot/stage1/build/bootsector.bin boot/stage2/build/stage2.bin kernel/build/kernel.bin fsgen rootfs/SHELL.TSK rootfs/HELLO.TSK rootfs/README.TXT rootfs/SYSTEM.CFG
+rootfs.img: boot/stage1/build/bootsector.bin boot/stage2/build/stage2.bin kernel/build/kernel.bin fsgen rootfs/SHELL.TSK rootfs/HELLO.TSK user/cmd/build/CLS.CMD rootfs/README.TXT rootfs/SYSTEM.CFG
 	./fsgen/fsgen rootfs.img \
 		--bootsector boot/stage1/build/bootsector.bin \
 		--stage2 boot/stage2/build/stage2.bin \
 		--kernel kernel/build/kernel.bin \
 		--task0 HELLO.TSK=rootfs/HELLO.TSK \
 		--file SHELL.TSK=rootfs/SHELL.TSK \
+		--file CLS.CMD=user/cmd/build/CLS.CMD \
 		--file README.TXT=rootfs/README.TXT \
 		--file SYSTEM.CFG=rootfs/SYSTEM.CFG
 
@@ -84,5 +93,5 @@ run: rootfs.img kernel
 	qemu-system-i386 -monitor stdio \
 		-drive file=rootfs.img,format=raw,if=floppy,index=0
 
-clean: stage1-clean stage2-clean kernel-clean fsgen-clean taskgen-clean common-libc-clean user-libc-clean shell-clean
+clean: stage1-clean stage2-clean kernel-clean fsgen-clean taskgen-clean common-libc-clean user-libc-clean shell-clean cmds-clean
 	rm -f user/build/SHELL.BIN user/build/HELLO.BIN rootfs/SHELL.TSK rootfs/HELLO.TSK rootfs.img
