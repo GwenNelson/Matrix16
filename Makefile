@@ -1,4 +1,4 @@
-.PHONY: all clean kernel kernel-clean stage1 stage1-clean stage2 stage2-clean fsgen fsgen-clean taskgen taskgen-clean run
+.PHONY: all clean kernel kernel-clean stage1 stage1-clean stage2 stage2-clean fsgen fsgen-clean taskgen taskgen-clean shell shell-clean run
 
 all: rootfs.img kernel
 
@@ -32,11 +32,15 @@ taskgen:
 taskgen-clean:
 	$(MAKE) -C taskgen/ clean
 
-user/build/SHELL.BIN: user/src/shell.asm
-	mkdir -p user/build
-	nasm -f bin $< -o $@
+shell:
+	$(MAKE) -C user/shell/
 
-rootfs/SHELL.TSK: user/build/SHELL.BIN taskgen
+shell-clean:
+	$(MAKE) -C user/shell/ clean
+
+user/shell/build/SHELL.BIN: shell
+
+rootfs/SHELL.TSK: user/shell/build/SHELL.BIN taskgen
 	mkdir -p rootfs
 	./taskgen/taskgen $< $@
 
@@ -68,5 +72,5 @@ run: rootfs.img kernel
 	qemu-system-i386 \
 		-drive file=rootfs.img,format=raw,if=floppy,index=0
 
-clean: stage1-clean stage2-clean kernel-clean fsgen-clean taskgen-clean
+clean: stage1-clean stage2-clean kernel-clean fsgen-clean taskgen-clean shell-clean
 	rm -f user/build/SHELL.BIN user/build/HELLO.BIN rootfs/SHELL.TSK rootfs/HELLO.TSK rootfs.img
