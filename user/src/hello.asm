@@ -8,14 +8,14 @@ start:
 
 	mov ax, 1              ; SYS_WRITE
 	mov bx, 1              ; stdout
-	mov cx, message
-	mov dx, message_end - message
+	mov dx, message
+	mov cx, message_end - message
 	int 0x80
 
 	mov ax, 1              ; SYS_WRITE
 	mov bx, 1              ; stdout
-	mov cx, console_message
-	mov dx, console_message_end - console_message
+	mov dx, console_message
+	mov cx, console_message_end - console_message
 	int 0x80
 
 .hang:

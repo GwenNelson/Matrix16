@@ -12,15 +12,21 @@ static void k_syscall_sys_write(registers_t *regs) {
 	if(regs->bx != 1) {
 		kpanic("Attempted SYS_WRITE to unknown handle!"); // Probably want a generic error handler for user programs instead of always kpanic
 	}
-	char __far *buf = mk_farptr(regs->ds, regs->cx);
-	for(int i = 0; i < regs->dx; i++) {
+	char __far *buf = mk_farptr(regs->ds, regs->dx);
+	for(int i = 0; i < regs->cx; i++) {
 		if(buf[i]=='\n') {
 			kconsole_puts(console,"\r\n");
 		} else {
 			kconsole_putc(console,buf[i]);
 		}
-//		bios_putchar(buf[i], console);
 	}
+}
+
+static void k_syscall_sys_read(registers_t *regs) {
+	uint8_t console;
+	if(!kthread_current_console(&console)) kpanic("User thread has no console!");
+
+
 }
 
 void k_syscall_callback(registers_t *regs) {
@@ -30,6 +36,9 @@ void k_syscall_callback(registers_t *regs) {
 	switch(regs->ax) {
 		case SYS_WRITE:
 			k_syscall_sys_write(regs);
+		break;
+		case SYS_READ:
+			k_syscall_sys_read(regs);
 		break;
 		default:
 			kpanic("Unknown syscall");
