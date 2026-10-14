@@ -12,7 +12,7 @@ static uint16_t readline(char* line, uint16_t capacity) {
 	if(capacity == 0) return 0;
 
 	for(;;) {
-		if(sys_read(&c,1) != 1) continue;
+		if(sys_read(0,&c,1) != 1) continue;
 
 		if(escape_state == 1) {
 			escape_state = c == '[' ? 2 : 0;
@@ -32,14 +32,14 @@ static uint16_t readline(char* line, uint16_t capacity) {
 		if(c == '\r') continue;
 		if(c == '\n') {
 			line[length] = '\0';
-			sys_write("\r\n",2);
+			sys_write(1,"\r\n",2);
 			return length;
 		}
 
 		if(c == '\b') {
 			if(length != 0) {
 				length--;
-				sys_write("\b \b",3);
+				sys_write(1,"\b \b",3);
 			}
 			continue;
 		}
@@ -48,7 +48,7 @@ static uint16_t readline(char* line, uint16_t capacity) {
 		if(length == capacity - 1) continue;
 
 		line[length++] = c;
-		sys_write(&c,1);
+		sys_write(1,&c,1);
 	}
 }
 
@@ -56,7 +56,7 @@ int main(void) {
 	char line[LINE_LENGTH];
 
 	for(;;) {
-		sys_write("Matrix16> ",10);
+		sys_write(1,"Matrix16> ",10);
 		readline(line,sizeof(line));
 	}
 }

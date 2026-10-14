@@ -81,7 +81,7 @@ rootfs.img: boot/stage1/build/bootsector.bin boot/stage2/build/stage2.bin kernel
 		--file SYSTEM.CFG=rootfs/SYSTEM.CFG
 
 run: rootfs.img kernel
-	qemu-system-i386 \
+	qemu-system-i386 -monitor stdio \
 		-drive file=rootfs.img,format=raw,if=floppy,index=0
 
 clean: stage1-clean stage2-clean kernel-clean fsgen-clean taskgen-clean common-libc-clean user-libc-clean shell-clean
