@@ -5,20 +5,12 @@
 #include "isr.h"
 #include "kpanic.h"
 #include "kthread.h"
+#include "kmemmap.h"
 #include "matfs16.h"
 #include "parsecfg.h"
 #include "string.h"
 #include "utils.h"
-
-typedef struct rootfs_dir_t {
-	uint16_t start_lba;
-	uint16_t end_lba;
-	uint16_t size;
-	char name[26];
-} __attribute__((packed)) rootfs_dir_t;
-
-char buf[512];
-
+#include "waitkey.h"
 
 void k_timer_callback(void) {
 	kthread_schedule();
@@ -49,32 +41,43 @@ void load_default_shell() {
 	}
 
 	// if we get here, yay! it should be possible to just JMP to it
-	__asm__ volatile (
-	    "ljmp $0x2000, $0x0000"
-	);	
+//	__asm__ volatile (
+//	    "ljmp $0x2000, $0x0000"
+//	);	
 }
 
 void kernel_main(void) {
 	bios_puts("Matrix16 Kernel loaded!\n\n");
 
+	bios_puts("Trying SYSTEM.CFG...\n");
+	load_system_cfg();
+
+	if(cfg_errors) {
+		bios_puts("Errors in SYSTEM.CFG, will use defaults, press any key to continue...\n");
+		bios_wait_for_key();
+	}
+
+	bios_puts("\n\n\n");
+
 	install_isr08();
 	install_isr09();
 	install_isr80();
 
-	bios_puts("Trying SYSTEM.CFG...\n");
-	load_system_cfg();
-
-	bios_puts("Starting up kthread...\n");
+	bios_puts("Starting task scheduler...\n");
 	kthread_init();
-	bios_puts("Should be ready to start scheduler...\n");
-//	kthread_start();
-	kpanic("Something went wrong!");
 
 	bios_puts("Starting configured shell A:");
 	bios_puts(system_cfg.shell);
 	bios_puts("...\n");
 
 	load_default_shell();
+
+	bios_puts("Loading tasks...\n");
+	kthread_setup(KTHREAD_USER_TSK0_ID,SEG_USER0,0x0000,0xFFFE);
+	kthread_start();
+	kpanic("Something went wrong!");
+
+
 
 	for(;;);
 }

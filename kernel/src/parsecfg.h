@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdbool.h>
+
 #include "matfs16.h"
 
 #define SYSTEM_CFG_TASK_COUNT 6
@@ -39,5 +41,6 @@ typedef struct system_cfg_t {
 } system_cfg_t;
 
 extern system_cfg_t system_cfg;
+extern bool cfg_errors;
 
 void load_system_cfg(void);

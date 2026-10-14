@@ -63,7 +63,7 @@ kthread_id_t kthread_cur_thread(void) {
 
 void test_task0(void) {
 	kconsole_init(PAGENUM_VC0);
-	kconsole_switchto(PAGENUM_VC0);
+//	kconsole_switchto(PAGENUM_VC0);
 	kconsole_puts(PAGENUM_VC0, "console 0");
 
 	for(;;) {
@@ -80,7 +80,7 @@ void test_task0(void) {
 
 void test_task1(void) {
 	kconsole_init(PAGENUM_VC1);
-	kconsole_switchto(PAGENUM_VC1);
+//	kconsole_switchto(PAGENUM_VC1);
 	kconsole_puts(PAGENUM_VC1, "console 1");
 
 	for(;;) {
@@ -97,7 +97,7 @@ void test_task1(void) {
 
 void test_task2(void) {
 	kconsole_init(PAGENUM_VC2);
-	kconsole_switchto(PAGENUM_VC2);
+//	kconsole_switchto(PAGENUM_VC2);
 	kconsole_puts(PAGENUM_VC2, "console 2");
 
 	for(;;) {
@@ -114,7 +114,7 @@ void test_task2(void) {
 
 void test_task3(void) {
 	kconsole_init(PAGENUM_VC3);
-	kconsole_switchto(PAGENUM_VC3);
+//	kconsole_switchto(PAGENUM_VC3);
 	kconsole_puts(PAGENUM_VC3, "console 3");
 
 	for(;;) {
@@ -146,9 +146,10 @@ void kthread_init(void) {
 	kconsole_set_switch_cb(&kevent_kbd_cb);
 	kthread_setup(KTHREAD_EVENT_ID,SEG_KERN,&kevent_task,(uint16_t)(&kevent_stack[KEVENT_STACK_LEN-2]));
 
-	// for now, testing, let's setup the "user" tasks as just kernel threads
-	kthread_setup(KTHREAD_USER_TSK0_ID, SEG_KERN, &test_task0,
-		(uint16_t)(&kuser_test_stack[0][USER_TEST_STACK_LEN - 2]));
+
+	// temporary silliness - we want to load the first task (probably the shell) into task0 in kmain.c
+//	kthread_setup(KTHREAD_USER_TSK0_ID, SEG_KERN, &test_task0,
+//		(uint16_t)(&kuser_test_stack[0][USER_TEST_STACK_LEN - 2]));
 	kthread_setup(KTHREAD_USER_TSK1_ID, SEG_KERN, &test_task1,
 		(uint16_t)(&kuser_test_stack[1][USER_TEST_STACK_LEN - 2]));
 	kthread_setup(KTHREAD_USER_TSK2_ID, SEG_KERN, &test_task2,
