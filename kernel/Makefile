@@ -1,7 +1,7 @@
 NASM    = nasm
 CC      = ia16-elf-gcc
 LD      = ia16-elf-ld
-CFLAGS  = -march=i8088 -Os -ffreestanding -ffixed-es -ffunction-sections -fdata-sections
+CFLAGS  = -march=i8088 -Os -ffreestanding -ffixed-es -ffunction-sections -fdata-sections -I../include
 LDFLAGS = --gc-sections
 OBJCOPY = ia16-elf-objcopy
 
@@ -40,7 +40,7 @@ $(BUILD)/bioscons.o: $(SRC)/bioscons.c $(SRC)/bioscons.h | $(BUILD)
 $(BUILD)/kpanic.o: $(SRC)/kpanic.c $(SRC)/kpanic.h $(SRC)/bioscons.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/kpanic.c -o $@
 
-$(BUILD)/ksyscall.o: $(SRC)/ksyscall.c $(SRC)/ksyscall.h $(SRC)/8086.h $(SRC)/bioscons.h $(SRC)/kpanic.h $(SRC)/utils.h | $(BUILD)
+$(BUILD)/ksyscall.o: $(SRC)/ksyscall.c $(SRC)/ksyscall.h $(SRC)/8086.h $(SRC)/bioscons.h $(SRC)/kpanic.h $(SRC)/utils.h ../include/syscalls.inc | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/ksyscall.c -o $@
 
 $(BUILD)/utils.o: $(SRC)/utils.c $(SRC)/utils.h | $(BUILD)

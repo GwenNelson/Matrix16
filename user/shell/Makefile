@@ -3,7 +3,7 @@ CC      = ia16-elf-gcc
 LD      = ia16-elf-ld
 OBJCOPY = ia16-elf-objcopy
 
-CFLAGS  = -march=i8088 -Os -ffreestanding -ffixed-ds -ffixed-es -ffunction-sections -fdata-sections
+CFLAGS  = -march=i8088 -Os -ffreestanding -ffixed-ds -ffixed-es -ffunction-sections -fdata-sections -I../../include
 LDFLAGS = --gc-sections
 
 SRC   = src
