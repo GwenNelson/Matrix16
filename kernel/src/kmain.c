@@ -94,11 +94,66 @@ static void do_start_delay(void) {
 	bios_puts("\n");
 }
 
+static void skip_systemcfg_prompt(void) {
+	volatile uint16_t __far *bios_ticks;
+	uint16_t flags;
+	uint16_t key;
+	uint16_t previous_tick;
+	uint16_t remaining = system_cfg.start_delay;
+	bool answered = false;
+
+	if(remaining == 0) return;
+
+	bios_ticks = (volatile uint16_t __far *)mk_farptr(0x0040, 0x006c);
+	__asm__ volatile ("pushf; popw %0; sti" : "=r" (flags) : : "memory");
+
+	while(bios_poll_key(&key))
+		;
+
+	bios_puts("Press F8 to skip SYSTEM.CFG...");
+	previous_tick = *bios_ticks;
+
+	while(remaining != 0) {
+		if(bios_poll_key(&key) && (uint8_t)(key >> 8) == 0x42) {
+			bios_puts("\nSkip SYSTEM.CFG? (Y/N) ");
+
+			while(!answered) {
+				if(!bios_poll_key(&key)) {
+					__asm__ volatile ("hlt" : : : "memory");
+					continue;
+				}
+
+				if((uint8_t)key == 'Y' || (uint8_t)key == 'y') {
+					bios_puts("Y\n");
+					reset_system_cfg_defaults();
+					answered = true;
+				} else if((uint8_t)key == 'N' || (uint8_t)key == 'n') {
+					bios_puts("N\n");
+					answered = true;
+				}
+			}
+			break;
+		}
+
+		if(*bios_ticks != previous_tick) {
+			previous_tick = *bios_ticks;
+			remaining--;
+			continue;
+		}
+
+		__asm__ volatile ("hlt" : : : "memory");
+	}
+
+	if(!answered) bios_puts("\n");
+	__asm__ volatile ("pushw %0; popf" : : "r" (flags) : "memory", "cc");
+}
+
 void kernel_main(void) {
 	bios_puts("Matrix16 Kernel loaded!\n\n");
 
 	bios_puts("Trying SYSTEM.CFG...\n");
 	load_system_cfg();
+	skip_systemcfg_prompt();
 
 	if(cfg_errors) {
 		bios_puts("Errors in SYSTEM.CFG, will use defaults, press any key to continue...\n");
