@@ -9,7 +9,17 @@ void putc(char c) {
 }
 
 int print_uint(uint16_t n) {
-	return 0;
+	char digits[5];
+	uint8_t length = 0;
+	uint8_t i;
+
+	do {
+		digits[length++] = '0' + n % 10;
+		n /= 10;
+	} while(n != 0);
+
+	for(i = length; i != 0; i--) putc(digits[i - 1]);
+	return length;
 }
 
 int printf(const char *fmt, ...) {

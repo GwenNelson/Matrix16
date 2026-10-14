@@ -54,6 +54,11 @@ static uint16_t readline(char* line, uint16_t capacity) {
 
 int main(void) {
 	char line[LINE_LENGTH];
+	uint16_t console_num;
+
+	console_num = sys_get_console();
+	printf("Welcome to Matrix16\n");
+	printf("You are on console %u\n",console_num);
 
 	for(;;) {
 		sys_write(1,"Matrix16> ",10);
