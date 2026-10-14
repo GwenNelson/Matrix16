@@ -19,7 +19,7 @@ typedef struct console_state_t {
 	bool wrap;
 	bool caps_lock;
 	bool num_lock;
-	uint8_t ansi_state; /* 0: text, 1: ESC, 2: CSI, 3: discarded CSI. */
+	uint8_t ansi_state; /* 0: text, 1: ESC, 2: CSI, 3: legacy discarded CSI. */
 	uint8_t param_index;
 	uint16_t params[KCONSOLE_ANSI_PARAMS];
 	volatile uint16_t input_head;
@@ -185,72 +185,30 @@ static uint8_t ansi_color(uint8_t color) {
 
 static void ansi_command(uint8_t page_num, char command) {
 	console_state_t *console = &consoles[page_num];
-	uint16_t amount = console->params[0];
 	uint16_t row = console->row;
 	uint16_t col = console->col;
 	uint16_t position = row * COLS + col;
-	if(amount == 0)
-		amount = 1;
 
 	switch(command) {
-		case 'A':
-			row = amount > row ? 0 : row - amount;
-			break;
-		case 'B':
-			row += amount;
-			break;
-		case 'C':
-			col += amount;
-			break;
-		case 'D':
-			col = amount > col ? 0 : col - amount;
-			break;
 		case 'H':
-		case 'f':
 			row = (console->params[0] ? console->params[0] : 1) - 1;
 			col = (console->params[1] ? console->params[1] : 1) - 1;
 			break;
 		case 'J':
-			switch(console->params[0]) {
-				case 0: clear_cells(page_num, position, CELLS); break;
-				case 1: clear_cells(page_num, 0, position + 1); break;
-				case 2: clear_cells(page_num, 0, CELLS); break;
-			}
+			if(console->params[0] == 2) clear_cells(page_num, 0, CELLS);
 			return;
 		case 'K':
-			switch(console->params[0]) {
-				case 0: clear_cells(page_num, position, (row + 1) * COLS); break;
-				case 1: clear_cells(page_num, row * COLS, position + 1); break;
-				case 2: clear_cells(page_num, row * COLS, (row + 1) * COLS); break;
-			}
+			if(console->params[0] == 0) clear_cells(page_num, position, (row + 1) * COLS);
 			return;
 		case 'm':
-			for(uint8_t i = 0; i <= console->param_index; i++) {
-				uint16_t value = console->params[i];
-				if(value == 0)
-					console->attribute = 0x07;
-				else if(value == 1)
-					console->attribute |= 8;
-				else if(value == 22)
-					console->attribute &= ~8;
-				else if(value >= 30 && value <= 37)
-					console->attribute = (console->attribute & 0xf8) | ansi_color(value - 30);
-				else if(value >= 40 && value <= 47)
-					console->attribute = (console->attribute & 0x8f) | (ansi_color(value - 40) << 4);
-				else if(value == 39)
-					console->attribute = (console->attribute & 0xf8) | 7;
-				else if(value == 49)
-					console->attribute &= 0x8f;
-			}
+			if(console->param_index != 0) return;
+			if(console->params[0] == 0)
+				console->attribute = 0x07;
+			else if(console->params[0] >= 30 && console->params[0] <= 37)
+				console->attribute = (console->attribute & 0xf8) | ansi_color(console->params[0] - 30);
+			else if(console->params[0] >= 40 && console->params[0] <= 47)
+				console->attribute = (console->attribute & 0x8f) | (ansi_color(console->params[0] - 40) << 4);
 			return;
-		case 's':
-			console->saved_row = row;
-			console->saved_col = col;
-			return;
-		case 'u':
-			row = console->saved_row;
-			col = console->saved_col;
-			break;
 		default:
 			return;
 	}
@@ -266,6 +224,7 @@ void kconsole_putc(uint8_t page_num, char c) {
 		return;
 	console_state_t *console = &consoles[page_num];
 	uint8_t byte = (uint8_t)c;
+	if(console->ansi_state > 2) console->ansi_state = 0;
 	if(byte == 0x1b) {
 		console->ansi_state = 1;
 		return;
@@ -275,25 +234,24 @@ void kconsole_putc(uint8_t page_num, char c) {
 		if(c == '[') {
 			console->ansi_state = 2;
 			console->param_index = 0;
-			for(uint8_t i = 0; i < KCONSOLE_ANSI_PARAMS; i++)
-				console->params[i] = 0;
+			console->params[0] = 0;
+			console->params[1] = 0;
 		}
 		return;
 	}
-	if(console->ansi_state >= 2) {
+	if(console->ansi_state == 2) {
 		if(byte >= 0x40 && byte <= 0x7e) {
-			if(console->ansi_state == 2)
-				ansi_command(page_num, c);
+			ansi_command(page_num, c);
 			console->ansi_state = 0;
-		} else if(console->ansi_state == 2) {
+		} else {
 			if(c >= '0' && c <= '9') {
 				uint16_t value = console->params[console->param_index];
 				value = value * 10 + c - '0';
-				console->params[console->param_index] = value > 999 ? 999 : value;
-			} else if(c == ';' && console->param_index < KCONSOLE_ANSI_PARAMS - 1) {
+				console->params[console->param_index] = value > 255 ? 255 : value;
+			} else if(c == ';' && console->param_index == 0) {
 				console->param_index++;
 			} else {
-				console->ansi_state = 3; /* Discard unsupported/oversized CSI. */
+				console->ansi_state = 0;
 			}
 		}
 		return;
