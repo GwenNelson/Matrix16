@@ -77,6 +77,10 @@ typedef enum matfs16_status {
 	MATFS16_ERR_BAD_SUPERBLOCK,
 	MATFS16_ERR_BAD_DIRECTORY,
 	MATFS16_ERR_BAD_BLOCKCHAIN,
+	MATFS16_ERR_NO_SPACE,
+	MATFS16_ERR_FILE_EXISTS,
+	MATFS16_ERR_DIRECTORY_FULL,
+	MATFS16_ERR_REFERENCED,
 	MATFS16_ERR_NOT_IMPLEMENTED
 } matfs16_status_t;
 
@@ -129,6 +133,23 @@ matfs16_status_t matfs16_store_block(
 	uint16_t lba,
 	uint16_t seg,
 	uint16_t buf
+);
+
+/* Create an empty root-directory file. Existing names are left untouched. */
+matfs16_status_t matfs16_create_file(uint8_t drive_no, const char *filename);
+
+/* Remove a file and release its data chain, unless system metadata references it. */
+matfs16_status_t matfs16_delete_file(uint8_t drive_no, const char *filename);
+
+/* Append bytes at position (which must equal the current file length). */
+matfs16_status_t matfs16_write_file(
+	uint8_t drive_no,
+	const char *filename,
+	uint16_t position,
+	uint16_t seg,
+	uint16_t buf,
+	uint16_t count,
+	uint16_t *bytes_written
 );
 
 /*

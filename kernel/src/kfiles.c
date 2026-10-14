@@ -3,6 +3,7 @@
 #include "kmemmap.h"
 #include "kthread.h"
 #include "matfs16.h"
+#include "string.h"
 #include "utils.h"
 
 #include <stdbool.h>
@@ -102,7 +103,10 @@ uint8_t kfile_open(uint8_t drive_num, const char* filename) {
 		file_descriptors[fd].blocks_remaining = block_count;
 		file_descriptors[fd].drive_num = drive_num;
 		file_descriptors[fd].owner = kthread_cur_thread();
+		if(directory) file_descriptors[fd].filename[0] = '\0';
+		else strcpy(file_descriptors[fd].filename, filename);
 		file_descriptors[fd].directory = directory;
+		file_descriptors[fd].writable = false;
 		file_descriptors[fd].used = true;
 		release_file_lock();
 		return (uint8_t)fd;
@@ -110,6 +114,65 @@ uint8_t kfile_open(uint8_t drive_num, const char* filename) {
 
 	release_file_lock();
 	return KFILE_INVALID_FD;
+}
+
+uint8_t kfile_create(uint8_t drive_num, const char* filename) {
+	matfs16_status_t status;
+	uint16_t fd;
+	uint16_t i;
+	uint16_t name_length;
+
+	if(filename == NULL) return KFILE_INVALID_FD;
+	name_length = strnlen(filename, MATFS16_FILENAME_MAXLEN);
+	if(name_length == 0 || name_length == MATFS16_FILENAME_MAXLEN) return KFILE_INVALID_FD;
+
+	acquire_file_lock();
+	for(fd = 0; fd < file_descriptor_count; fd++) {
+		if(file_descriptors[fd].used) continue;
+		file_descriptors[fd].used = true;
+		file_descriptors[fd].owner = kthread_cur_thread();
+		file_descriptors[fd].writable = true;
+		file_descriptors[fd].directory = false;
+		file_descriptors[fd].drive_num = drive_num;
+		file_descriptors[fd].position = 0;
+		file_descriptors[fd].length = 0;
+		file_descriptors[fd].current_lba = 0;
+		file_descriptors[fd].block_offset = 0;
+		file_descriptors[fd].blocks_remaining = 0;
+		for(i = 0; i <= name_length; i++) file_descriptors[fd].filename[i] = filename[i];
+
+		status = matfs16_create_file(drive_num, filename);
+		if(status != MATFS16_OK) {
+			file_descriptors[fd].used = false;
+			release_file_lock();
+			return KFILE_INVALID_FD;
+		}
+
+		release_file_lock();
+		return (uint8_t)fd;
+	}
+
+	release_file_lock();
+	return KFILE_INVALID_FD;
+}
+
+bool kfile_delete(uint8_t drive_num, const char* filename) {
+	uint16_t fd;
+	matfs16_status_t status;
+
+	if(filename == NULL) return false;
+	acquire_file_lock();
+	for(fd = 0; fd < file_descriptor_count; fd++) {
+		if(file_descriptors[fd].used && file_descriptors[fd].drive_num == drive_num &&
+		   (file_descriptors[fd].directory || strcmp(file_descriptors[fd].filename, filename) == 0)) {
+			release_file_lock();
+			return false;
+		}
+	}
+
+	status = matfs16_delete_file(drive_num, filename);
+	release_file_lock();
+	return status == MATFS16_OK;
 }
 
 bool kfile_close(uint8_t fd) {
@@ -184,4 +247,31 @@ bool kfile_read(uint8_t fd, uint16_t count, uint16_t seg, uint16_t buf, uint16_t
 
 	release_file_lock();
 	return true;
+}
+
+bool kfile_write(uint8_t fd, uint16_t count, uint16_t seg, uint16_t buf, uint16_t* bytes_written) {
+	file_desc_t* descriptor;
+	matfs16_status_t status;
+	uint16_t written = 0;
+
+	if(bytes_written == NULL) return false;
+	*bytes_written = 0;
+	if(count != 0 && (buf > 0xFE00 || count - 1 > 0xFFFF - buf)) return false;
+
+	acquire_file_lock();
+	if(fd >= file_descriptor_count || !file_descriptors[fd].used ||
+	   file_descriptors[fd].owner != kthread_cur_thread() ||
+	   !file_descriptors[fd].writable || file_descriptors[fd].directory) {
+		release_file_lock();
+		return false;
+	}
+
+	descriptor = &file_descriptors[fd];
+	status = matfs16_write_file(descriptor->drive_num, descriptor->filename,
+	                            descriptor->position, seg, buf, count, &written);
+	descriptor->position += written;
+	descriptor->length += written;
+	*bytes_written = written;
+	release_file_lock();
+	return status == MATFS16_OK;
 }

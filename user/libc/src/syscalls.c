@@ -1,6 +1,6 @@
 #include "syscalls.h"
 
-void sys_write(uint16_t handle, const char* buffer, uint16_t length) {
+uint16_t sys_write(uint16_t handle, const char* buffer, uint16_t length) {
 	uint16_t ax = SYS_WRITE;
 
 	__asm__ volatile (
@@ -9,6 +9,8 @@ void sys_write(uint16_t handle, const char* buffer, uint16_t length) {
 		: "b" (handle), "c" (length), "d" ((uint16_t)buffer)
 		: "memory", "cc"
 	);
+
+	return ax;
 }
 
 uint16_t sys_read(uint16_t handle, char* buffer, uint16_t length) {
@@ -54,6 +56,32 @@ uint16_t sys_load(const char* filename, void* buffer, uint16_t* length) {
 
 uint16_t sys_open(const char* filename) {
 	uint16_t ax = SYS_OPEN;
+
+	__asm__ volatile (
+		"int $0x80"
+		: "+a" (ax)
+		: "b" ((uint16_t)filename)
+		: "memory", "cc"
+	);
+
+	return ax;
+}
+
+uint16_t sys_create(const char* filename) {
+	uint16_t ax = SYS_CREATE;
+
+	__asm__ volatile (
+		"int $0x80"
+		: "+a" (ax)
+		: "b" ((uint16_t)filename)
+		: "memory", "cc"
+	);
+
+	return ax;
+}
+
+uint16_t sys_delete(const char* filename) {
+	uint16_t ax = SYS_DELETE;
 
 	__asm__ volatile (
 		"int $0x80"

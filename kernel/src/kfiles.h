@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "kthread.h"
+#include "matfs16.h"
 
 #define KFILE_INVALID_FD 0xFF
 
@@ -15,7 +16,9 @@ typedef struct file_desc_t {
 	uint16_t blocks_remaining;
 	uint8_t drive_num;
 	kthread_id_t owner;
+	char filename[MATFS16_FILENAME_MAXLEN];
 	bool directory;
+	bool writable;
 	bool used;
 } file_desc_t;
 
@@ -30,6 +33,12 @@ void kfiles_init(uint16_t descriptor_count);
  */
 uint8_t kfile_open(uint8_t drive_num, const char* filename);
 
+/* Create a new empty file for writing, or return KFILE_INVALID_FD. */
+uint8_t kfile_create(uint8_t drive_num, const char* filename);
+
+/* Delete a file only when no task currently has it open. */
+bool kfile_delete(uint8_t drive_num, const char* filename);
+
 /* Close a global file descriptor, returning false if it is not open. */
 bool kfile_close(uint8_t fd);
 
@@ -41,3 +50,6 @@ bool kfile_close(uint8_t fd);
  * copied and the descriptor remains at its new position.
  */
 bool kfile_read(uint8_t fd, uint16_t count, uint16_t seg, uint16_t buf, uint16_t* bytes_read);
+
+/* Append to a writable descriptor. bytes_written reports any partial progress. */
+bool kfile_write(uint8_t fd, uint16_t count, uint16_t seg, uint16_t buf, uint16_t* bytes_written);
