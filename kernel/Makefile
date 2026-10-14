@@ -41,13 +41,16 @@ $(BUILD)/utils.o: $(SRC)/utils.c $(SRC)/utils.h | $(BUILD)
 $(BUILD)/string.o: $(SRC)/string.c $(SRC)/string.h | $(BUILD)
 	$(CC) -march=i8088 -ffreestanding -c $(SRC)/string.c -o $@
 
+$(BUILD)/matfs16.o: $(SRC)/matfs16.c $(SRC)/matfs16.h | $(BUILD)
+	$(CC) -march=i8088 -ffreestanding -c $(SRC)/matfs16.c -o $@
+
 $(BUILD)/kconsole.o: $(SRC)/kconsole.c $(SRC)/kconsole.h | $(BUILD)
 	$(CC) -march=i8088 -Os -ffreestanding -c $(SRC)/kconsole.c -o $@
 
 $(BUILD)/kthread.o: $(SRC)/kthread.c $(SRC)/kthread.h | $(BUILD)
 	$(CC) -march=i8088 -Os -ffreestanding -c $(SRC)/kthread.c -o $@
 
-$(BUILD)/kernel.elf: $(BUILD)/kentry.o $(BUILD)/isr.o $(BUILD)/switchto.o $(BUILD)/biosdisk.o $(BUILD)/kmain.o $(BUILD)/bioscons.o $(BUILD)/kpanic.o $(BUILD)/ksyscall.o $(BUILD)/utils.o $(BUILD)/string.o $(BUILD)/kconsole.o $(BUILD)/kthread.o
+$(BUILD)/kernel.elf: $(BUILD)/kentry.o $(BUILD)/isr.o $(BUILD)/switchto.o $(BUILD)/biosdisk.o $(BUILD)/kmain.o $(BUILD)/bioscons.o $(BUILD)/kpanic.o $(BUILD)/ksyscall.o $(BUILD)/utils.o $(BUILD)/string.o $(BUILD)/matfs16.o $(BUILD)/kconsole.o $(BUILD)/kthread.o
 	$(LD) -T $(SRC)/kernel.ld -o $@ $^
 
 $(BUILD)/kernel.bin: $(BUILD)/kernel.elf

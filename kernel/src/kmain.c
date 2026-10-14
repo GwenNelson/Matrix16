@@ -196,11 +196,13 @@ void kernel_main(void) {
 
 	// we'll come back to the below after rethinking the filesystem etc, for now just want to test the threading and VCs work
 
-	bios_puts("Starting up kthread...\n");
+	
+
+/*	bios_puts("Starting up kthread...\n");
 	kthread_init();
 	bios_puts("Should be ready to start schedule...\n");
 	kthread_start();
-	kpanic("Something went wrong!");
+	kpanic("Something went wrong!");*/
 
 	/*bool got_rootfs = false;
 
