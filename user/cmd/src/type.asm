@@ -1,6 +1,7 @@
 BITS 16
 ORG 0x8000
 
+MAX_FILENAME_LEN equ 26
 FILE_BUF_SIZE equ 32
 CMD_LINE equ 0x0100
 
@@ -13,7 +14,11 @@ SYS_CLOSE equ 6
 
 entry:
 	call clear_buf
-	; first we need to open the file 
+	; first we need to check if the filename begins with A: or B: not
+
+	mov bx,CMD_LINE ; filename is in the command line as a C string
+	call check_prefix
+
 	mov bx,CMD_LINE ; filename is in the command line as a C string
 	mov ax,SYS_OPEN
 	int 0x80
@@ -59,6 +64,25 @@ entry:
 	call nl
 	jmp exit
 
+check_prefix:
+	; we just load the first character into AL first
+	mov al, byte [bx]
+	inc bx
+	cmp al,':'
+	jne .normalize
+	jmp .done
+
+.normalize:
+	mov si, CMD_LINE
+	mov di, filename_buf+2
+	call strcpy
+	mov si, filename_buf
+	mov di, CMD_LINE
+	call strcpy
+
+.done:
+	ret
+
 open_error:
 	mov ax,SYS_WRITE
 	mov bx,1
@@ -97,6 +121,15 @@ clear_buf:
 	pop ax
 	ret
 
+strcpy:
+	cld
+.loop:
+	lodsb
+	stosb
+	test al, al
+	jnz .loop
+	ret
+
 fd_var:
 	dw 0
 
@@ -107,5 +140,10 @@ open_error_str_end:
 nlstr:
 	db 10
 
+filename_buf:
+	db "A:"
+	resb MAX_FILENAME_LEN
+
 file_buf:
 	resb FILE_BUF_SIZE
+
