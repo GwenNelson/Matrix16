@@ -68,6 +68,7 @@ typedef struct __attribute__((packed)) matfs_directory_block_t {
 typedef enum matfs16_status {
 	MATFS16_OK = 0,
 	MATFS16_END_OF_FILE,
+	MATFS16_END_OF_DIRECTORY,
 	MATFS16_ERR_INVALID_ARGUMENT,
 	MATFS16_ERR_NOT_FOUND,
 	MATFS16_ERR_DISK,
@@ -76,6 +77,12 @@ typedef enum matfs16_status {
 	MATFS16_ERR_BAD_BLOCKCHAIN,
 	MATFS16_ERR_NOT_IMPLEMENTED
 } matfs16_status_t;
+
+/*
+ * Copy one zero-based entry from the root directory into caller-owned
+ * storage. MATFS16_END_OF_DIRECTORY means that index is past the last entry.
+ */
+matfs16_status_t matfs16_read_direntry(uint8_t drive_no, uint16_t index, matfs_directory_entry_t *entry);
 
 /*
  * Find filename in the MATFS16 root directory on drive_no.

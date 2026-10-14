@@ -5,6 +5,7 @@
 #include "isr.h"
 #include "kpanic.h"
 #include "kthread.h"
+#include "matfs16.h"
 #include "string.h"
 #include "utils.h"
 
@@ -187,6 +188,30 @@ void load_default_shell() {
 	);	
 }
 
+void dump_dir(void) {
+	matfs_directory_entry_t entry;
+	matfs16_status_t status;
+	uint16_t index = 0;
+
+	bios_puts("Directory listing for A:\n");
+	for(;;) {
+		status = matfs16_read_direntry(0, index, &entry);
+		if(status == MATFS16_END_OF_DIRECTORY) break;
+
+		if(status != MATFS16_OK) {
+			bios_puts("MATFS16 directory error: ");
+			bios_put_decimal((uint16_t)status);
+			bios_puts("\n");
+			return;
+		}
+
+		bios_puts("\t");
+		bios_puts(entry.name);
+		bios_puts("\n");
+		index++;
+	}
+}
+
 void kernel_main(void) {
 	bios_puts("Matrix16 Kernel loaded!\n\n");
 
@@ -195,7 +220,7 @@ void kernel_main(void) {
 	install_isr80();
 
 	// gonna test matfs16 here, then come back to the other stuff
-
+	dump_dir();
 
 
 /*	bios_puts("Starting up kthread...\n");

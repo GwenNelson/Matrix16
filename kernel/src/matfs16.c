@@ -133,6 +133,15 @@ static bool verify_file_entry(matfs_directory_entry_t* entry) {
 	return true;
 }
 
+static void copy_directory_entry(matfs_directory_entry_t* destination, matfs_directory_entry_t* source) {
+	uint16_t i;
+
+	destination->first_block = source->first_block;
+	destination->block_count = source->block_count;
+	destination->logical_size = source->logical_size;
+	for(i = 0; i < MATFS16_FILENAME_MAXLEN; i++) destination->name[i] = source->name[i];
+}
+
 static bool verify_blockchain_block(uint8_t* blockchain) {
 	uint16_t calculated_checksum = 0;
 	uint16_t offset;
@@ -176,6 +185,81 @@ static uint8_t* get_scratch_buf(void) {
 	if(thread == KTHREAD_INVALID_ID || thread > KTHREAD_MAX_ID) return matfs16_bootstrap_scratch;
 
 	return matfs16_thread_scratch[thread];
+}
+
+matfs16_status_t matfs16_read_direntry(uint8_t drive_no, uint16_t index, matfs_directory_entry_t* entry) {
+	uint8_t* scratch_buf;
+	matfs_superblock_t* super;
+	matfs_directory_block_t* directory;
+	matfs_directory_entry_t* selected_entry;
+	matfs16_status_t status;
+	uint16_t root_start;
+	uint16_t root_length;
+	uint16_t total_entries = 0;
+	uint16_t current_lba;
+	uint16_t previous_lba;
+	uint16_t next_lba;
+	uint16_t hinted_next_lba;
+	uint16_t target_block;
+	uint16_t target_entry;
+	uint16_t block_index;
+
+	if(entry == NULL) return MATFS16_ERR_INVALID_ARGUMENT;
+
+	/* Load the superblock and remember where the root directory begins. */
+	scratch_buf = get_scratch_buf();
+	status = matfs16_load_block(drive_no, MATFS16_SUPERBLOCK_LBA, SEG_KERN, (uint16_t)scratch_buf);
+	if(status != MATFS16_OK) return status;
+
+	super = (matfs_superblock_t*)scratch_buf;
+	if(!verify_super(super)) return MATFS16_ERR_BAD_SUPERBLOCK;
+
+	root_start = super->root_dir_start;
+	root_length = super->root_dir_len;
+	if(root_start == 0) return MATFS16_ERR_NOT_FOUND;
+
+	target_block = index / MATFS16_DIRECTORY_ENTRIES_PER_BLOCK;
+	target_entry = index % MATFS16_DIRECTORY_ENTRIES_PER_BLOCK;
+	current_lba = root_start;
+	previous_lba = root_start;
+
+	/* Follow the root chain until the block containing index is reached. */
+	for(block_index = 0; block_index < root_length; block_index++) {
+		status = matfs16_load_block(drive_no, current_lba, SEG_KERN, (uint16_t)scratch_buf);
+		if(status != MATFS16_OK) return status;
+
+		directory = (matfs_directory_block_t*)scratch_buf;
+		if(block_index == 0) {
+			if(!verify_rootdir(directory)) return MATFS16_ERR_BAD_DIRECTORY;
+			total_entries = directory->entry_count;
+			if(index >= total_entries) return MATFS16_END_OF_DIRECTORY;
+		} else {
+			if(!verify_directory_block(directory)) return MATFS16_ERR_BAD_DIRECTORY;
+		}
+
+		if(directory->parent_start != root_start || directory->parent_len != root_length || directory->entry_count != total_entries || directory->prev_block != previous_lba) return MATFS16_ERR_BAD_DIRECTORY;
+
+		if(block_index == target_block) {
+			selected_entry = &directory->entries[target_entry];
+			if(!verify_file_entry(selected_entry)) return MATFS16_ERR_BAD_DIRECTORY;
+			copy_directory_entry(entry, selected_entry);
+			return MATFS16_OK;
+		}
+
+		/* The requested entry is later, so this block must have a successor. */
+		if(block_index + 1 == root_length) return MATFS16_ERR_BAD_DIRECTORY;
+
+		hinted_next_lba = directory->next_block;
+		status = matfs16_next_block(drive_no, current_lba, &next_lba);
+		if(status == MATFS16_END_OF_FILE) return MATFS16_ERR_BAD_BLOCKCHAIN;
+		if(status != MATFS16_OK) return status;
+		if(hinted_next_lba != next_lba) return MATFS16_ERR_BAD_DIRECTORY;
+
+		previous_lba = current_lba;
+		current_lba = next_lba;
+	}
+
+	return MATFS16_ERR_BAD_DIRECTORY;
 }
 
 matfs16_status_t matfs16_locate_file(const char* filename, uint8_t drive_no, uint16_t* lba, uint16_t* length) {
