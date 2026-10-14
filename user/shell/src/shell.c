@@ -1,6 +1,10 @@
+#include <stdio.h>
 #include <stdint.h>
+#include <string.h>
 
 #include <syscalls.h>
+
+#include "shell_command.h"
 
 #define LINE_LENGTH 80
 
@@ -52,12 +56,44 @@ static uint16_t readline(char* line, uint16_t capacity) {
 	}
 }
 
+static void uppercase(char* string) {
+	while(*string != '\0') {
+		if(*string >= 'a' && *string <= 'z') *string -= 'a' - 'A';
+		string++;
+	}
+}
+
 void shell_mainloop() {
 	char line[LINE_LENGTH];
+	char command_path[28];
+	uint16_t command_length;
+	uint16_t file_length;
+
+	// this is a seriously dumb hack
 	for(;;) {
 		sys_write(1,"Matrix16> ",10);
 		readline(line,sizeof(line));
+
+		command_length = strnlen(line,22);
+		if(command_length == 0 || command_length > 21) {
+			printf("Invalid command name %s\n",line);
+			continue;
+		}
+
+		uppercase(line);
+		command_path[0] = 'A';
+		command_path[1] = ':';
+		memcpy(command_path + 2,line,command_length);
+		memcpy(command_path + 2 + command_length,".CMD",sizeof(".CMD"));
+
+		if(sys_load(command_path,(void*)0x8000,&file_length) != 0) {
+			printf("Unable to load %s\n",command_path);
+			continue;
+		}
+
+		shell_run_command();
 	}
+
 }
 
 int main(void) {

@@ -3,6 +3,7 @@
 #include "ksyscall.h"
 #include "kthread.h"
 #include "kconsole.h"
+#include "matfs16.h"
 #include "utils.h"
 
 static void k_syscall_sys_write(registers_t *regs) {
@@ -55,6 +56,70 @@ static void k_syscall_sys_get_console(registers_t *regs) {
 	else regs->ax = SYSCALL_CONSOLE_INVALID;
 }
 
+/* Load a file named in DS:BX into DS:DX. The filename begins with A: or B:. */
+static void k_syscall_sys_load(registers_t *regs) {
+	char __far *user_filename = mk_farptr(regs->ds, regs->bx);
+	char filename[MATFS16_FILENAME_MAXLEN];
+	matfs16_status_t status;
+	uint8_t drive_no;
+	uint16_t current_lba;
+	uint16_t next_lba;
+	uint16_t length;
+	uint16_t block_count;
+	uint16_t block_index;
+	uint16_t destination = regs->dx;
+	uint16_t i;
+
+	regs->ax = 1;
+	regs->cx = 0;
+
+	if(user_filename[0] == 'A') drive_no = 0;
+	else if(user_filename[0] == 'B') drive_no = 1;
+	else return;
+	if(user_filename[1] != ':') return;
+
+	/* Copy the filename out of user memory before loading over the caller's
+	 * destination buffer. MATFS16 names contain at most 25 characters plus
+	 * their terminating NUL. */
+	for(i = 0; i < MATFS16_FILENAME_MAXLEN; i++) {
+		filename[i] = user_filename[i + 2];
+		if(filename[i] == '\0') break;
+	}
+	if(i == MATFS16_FILENAME_MAXLEN || filename[0] == '\0') return;
+
+	status = matfs16_locate_file(filename, drive_no, &current_lba, &length);
+	if(status != MATFS16_OK) return;
+	if(length == MATFS16_FILE_SIZE_UNKNOWN) return;
+
+	block_count = length / MATFS16_BLOCK_SIZE;
+	if(length % MATFS16_BLOCK_SIZE != 0) block_count++;
+
+	/* matfs16_load_block() writes a complete sector, including the padding
+	 * after the logical end of the file. Ensure every such write remains in
+	 * the caller's 64 KiB segment. */
+	if(block_count != 0) {
+		if(destination > 0xFE00) return;
+		if(block_count - 1 > (0xFE00 - destination) / MATFS16_BLOCK_SIZE) return;
+	}
+
+	for(block_index = 0; block_index < block_count; block_index++) {
+		status = matfs16_load_block(drive_no, current_lba, regs->ds, destination);
+		if(status != MATFS16_OK) return;
+
+		status = matfs16_next_block(drive_no, current_lba, &next_lba);
+		if(block_index + 1 == block_count) {
+			if(status != MATFS16_END_OF_FILE) return;
+		} else {
+			if(status != MATFS16_OK) return;
+			current_lba = next_lba;
+			destination += MATFS16_BLOCK_SIZE;
+		}
+	}
+
+	regs->cx = length;
+	regs->ax = 0;
+}
+
 void k_syscall_callback(registers_t *regs) {
 	kthread_id_t thread = kthread_cur_thread();
 	if(thread < KTHREAD_USER_TSK0_ID || thread > KTHREAD_USER_RSV_ID) kpanic("Syscall from non-user thread!");
@@ -68,6 +133,9 @@ void k_syscall_callback(registers_t *regs) {
 		break;
 		case SYS_GET_CONSOLE:
 			k_syscall_sys_get_console(regs);
+		break;
+		case SYS_LOAD:
+			k_syscall_sys_load(regs);
 		break;
 		default:
 			kpanic("Unknown syscall");
