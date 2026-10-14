@@ -24,6 +24,15 @@ int strncmp(const char *a, const char *b, uint16_t n) {
 	return 0;
 }
 
+uint16_t strnlen(const char *s, uint16_t maxlen) {
+	uint16_t length = 0;
+
+	while(length < maxlen && s[length] != '\0')
+		length++;
+
+	return length;
+}
+
 char *strchr(const char *s, int c) {
 	uint8_t target = (uint8_t)c;
 

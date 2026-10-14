@@ -194,9 +194,9 @@ void kernel_main(void) {
 	install_isr09();
 	install_isr80();
 
-	// we'll come back to the below after rethinking the filesystem etc, for now just want to test the threading and VCs work
+	// gonna test matfs16 here, then come back to the other stuff
 
-	
+
 
 /*	bios_puts("Starting up kthread...\n");
 	kthread_init();

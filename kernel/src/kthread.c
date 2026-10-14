@@ -57,6 +57,10 @@ static void kevent_task(void) {
 static bool scheduler_ready    = false;              // guard against scheduling too early
 kthread_id_t cur_thread = KTHREAD_INVALID_ID; // also read by the interrupt stubs
 
+kthread_id_t kthread_cur_thread(void) {
+	return cur_thread;
+}
+
 void test_task0(void) {
 	kconsole_init(PAGENUM_VC0);
 	kconsole_switchto(PAGENUM_VC0);
