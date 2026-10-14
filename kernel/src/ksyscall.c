@@ -154,7 +154,7 @@ static void k_syscall_sys_open(registers_t* regs) {
 		filename[i] = user_filename[i + 2];
 		if(filename[i] == '\0') break;
 	}
-	if(i == MATFS16_FILENAME_MAXLEN || filename[0] == '\0') return;
+	if(i == MATFS16_FILENAME_MAXLEN) return;
 
 	fd = kfile_open(drive_num, filename);
 	if(fd == KFILE_INVALID_FD) return;

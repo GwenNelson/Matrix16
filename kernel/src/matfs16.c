@@ -187,6 +187,39 @@ static uint8_t* get_scratch_buf(void) {
 	return matfs16_thread_scratch[thread];
 }
 
+matfs16_status_t matfs16_locate_root(uint8_t drive_no, uint16_t* lba, uint16_t* block_count) {
+	uint8_t* scratch_buf;
+	matfs_superblock_t* super;
+	matfs_directory_block_t* root;
+	matfs16_status_t status;
+	uint16_t root_start;
+	uint16_t root_length;
+
+	if(lba == NULL || block_count == NULL) return MATFS16_ERR_INVALID_ARGUMENT;
+
+	scratch_buf = get_scratch_buf();
+	status = matfs16_load_block(drive_no, MATFS16_SUPERBLOCK_LBA, SEG_KERN, (uint16_t)scratch_buf);
+	if(status != MATFS16_OK) return status;
+
+	super = (matfs_superblock_t*)scratch_buf;
+	if(!verify_super(super)) return MATFS16_ERR_BAD_SUPERBLOCK;
+
+	root_start = super->root_dir_start;
+	root_length = super->root_dir_len;
+	if(root_start == 0) return MATFS16_ERR_NOT_FOUND;
+
+	status = matfs16_load_block(drive_no, root_start, SEG_KERN, (uint16_t)scratch_buf);
+	if(status != MATFS16_OK) return status;
+
+	root = (matfs_directory_block_t*)scratch_buf;
+	if(!verify_rootdir(root)) return MATFS16_ERR_BAD_DIRECTORY;
+	if(root->parent_start != root_start || root->parent_len != root_length) return MATFS16_ERR_BAD_DIRECTORY;
+
+	*lba = root_start;
+	*block_count = root_length;
+	return MATFS16_OK;
+}
+
 matfs16_status_t matfs16_read_direntry(uint8_t drive_no, uint16_t index, matfs_directory_entry_t* entry) {
 	uint8_t* scratch_buf;
 	matfs_superblock_t* super;

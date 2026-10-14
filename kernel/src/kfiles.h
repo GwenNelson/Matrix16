@@ -12,8 +12,10 @@ typedef struct file_desc_t {
 	uint16_t length;
 	uint16_t position;
 	uint16_t block_offset;
+	uint16_t blocks_remaining;
 	uint8_t drive_num;
 	kthread_id_t owner;
+	bool directory;
 	bool used;
 } file_desc_t;
 
@@ -21,8 +23,10 @@ typedef struct file_desc_t {
 void kfiles_init(uint16_t descriptor_count);
 
 /*
- * Open a file at offset zero, or return KFILE_INVALID_FD on error. Files whose
- * directory length is MATFS16_FILE_SIZE_UNKNOWN cannot be opened this way.
+ * Open a file at offset zero, or return KFILE_INVALID_FD on error. An empty
+ * filename opens the drive's root directory as a stream of raw directory
+ * blocks. Files whose directory length is MATFS16_FILE_SIZE_UNKNOWN cannot be
+ * opened this way.
  */
 uint8_t kfile_open(uint8_t drive_num, const char* filename);
 

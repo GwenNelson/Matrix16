@@ -86,6 +86,9 @@ typedef enum matfs16_status {
  */
 matfs16_status_t matfs16_read_direntry(uint8_t drive_no, uint16_t index, matfs_directory_entry_t *entry);
 
+/* Return the validated root directory's first absolute LBA and block count. */
+matfs16_status_t matfs16_locate_root(uint8_t drive_no, uint16_t *lba, uint16_t *block_count);
+
 /*
  * Return the root-directory filename stored in one of the four superblock
  * task slots. filename must provide MATFS16_FILENAME_MAXLEN bytes and result

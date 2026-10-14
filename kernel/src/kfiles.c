@@ -46,6 +46,17 @@ static void copy_to_far_buffer(uint16_t seg, uint16_t buf, const uint8_t* source
 	for(i = 0; i < count; i++) destination[i] = source[i];
 }
 
+static uint16_t directory_bytes_available(file_desc_t* descriptor) {
+	if(descriptor->blocks_remaining == 0) return 0;
+	if(descriptor->blocks_remaining > 128) return 0xFFFF;
+	if(descriptor->blocks_remaining == 128) {
+		if(descriptor->block_offset == 0) return 0xFFFF;
+		return 0 - descriptor->block_offset;
+	}
+
+	return descriptor->blocks_remaining * MATFS16_BLOCK_SIZE - descriptor->block_offset;
+}
+
 void kfiles_init(uint16_t descriptor_count) {
 	uint16_t i;
 
@@ -63,12 +74,21 @@ uint8_t kfile_open(uint8_t drive_num, const char* filename) {
 	matfs16_status_t status;
 	uint16_t first_lba;
 	uint16_t length;
+	uint16_t block_count = 0;
 	uint16_t fd;
+	bool directory;
 
 	if(filename == NULL) return KFILE_INVALID_FD;
 
-	status = matfs16_locate_file(filename, drive_num, &first_lba, &length);
-	if(status != MATFS16_OK || length == MATFS16_FILE_SIZE_UNKNOWN) return KFILE_INVALID_FD;
+	directory = filename[0] == '\0';
+	if(directory) {
+		status = matfs16_locate_root(drive_num, &first_lba, &block_count);
+		length = 0;
+	} else {
+		status = matfs16_locate_file(filename, drive_num, &first_lba, &length);
+	}
+	if(status != MATFS16_OK) return KFILE_INVALID_FD;
+	if(!directory && length == MATFS16_FILE_SIZE_UNKNOWN) return KFILE_INVALID_FD;
 
 	acquire_file_lock();
 
@@ -79,8 +99,10 @@ uint8_t kfile_open(uint8_t drive_num, const char* filename) {
 		file_descriptors[fd].length = length;
 		file_descriptors[fd].position = 0;
 		file_descriptors[fd].block_offset = 0;
+		file_descriptors[fd].blocks_remaining = block_count;
 		file_descriptors[fd].drive_num = drive_num;
 		file_descriptors[fd].owner = kthread_cur_thread();
+		file_descriptors[fd].directory = directory;
 		file_descriptors[fd].used = true;
 		release_file_lock();
 		return (uint8_t)fd;
@@ -122,7 +144,8 @@ bool kfile_read(uint8_t fd, uint16_t count, uint16_t seg, uint16_t buf, uint16_t
 	}
 
 	descriptor = &file_descriptors[fd];
-	available = descriptor->length - descriptor->position;
+	if(descriptor->directory) available = directory_bytes_available(descriptor);
+	else available = descriptor->length - descriptor->position;
 	remaining = count < available ? count : available;
 
 	/* The bytes actually copied must fit before the end of the segment. */
@@ -138,6 +161,7 @@ bool kfile_read(uint8_t fd, uint16_t count, uint16_t seg, uint16_t buf, uint16_t
 				release_file_lock();
 				return false;
 			}
+			if(descriptor->directory) descriptor->blocks_remaining--;
 			descriptor->current_lba = next_lba;
 			descriptor->block_offset = 0;
 		}
@@ -153,7 +177,7 @@ bool kfile_read(uint8_t fd, uint16_t count, uint16_t seg, uint16_t buf, uint16_t
 
 		copy_to_far_buffer(seg, buf + *bytes_read, file_scratch + descriptor->block_offset, chunk);
 		descriptor->block_offset += chunk;
-		descriptor->position += chunk;
+		if(!descriptor->directory) descriptor->position += chunk;
 		*bytes_read += chunk;
 		remaining -= chunk;
 	}
