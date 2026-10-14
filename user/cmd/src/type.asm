@@ -14,9 +14,13 @@ SYS_CLOSE equ 6
 
 entry:
 	call clear_buf
+
 	; first we need to check if the filename begins with A: or B: not
 
 	mov bx,CMD_LINE ; filename is in the command line as a C string
+	mov ax,[byte bx]
+	test ax,ax
+	jz exit
 	call check_prefix
 
 	mov bx,CMD_LINE ; filename is in the command line as a C string
@@ -67,6 +71,7 @@ entry:
 check_prefix:
 	; we just load the first character into AL first
 	mov al, byte [bx]
+	inc bx
 	inc bx
 	cmp al,':'
 	jne .normalize
