@@ -16,5 +16,5 @@ start:
     jmp .hang
 
 message:
-    db "Hello from Matrix16!\n"
+    db "Hello from Matrix16!",10,0
 message_end:

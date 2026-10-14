@@ -5,12 +5,14 @@
 #include "isr.h"
 #include "kpanic.h"
 #include "kthread.h"
+#include "kconsole.h"
 #include "kmemmap.h"
 #include "matfs16.h"
 #include "parsecfg.h"
 #include "string.h"
 #include "utils.h"
 #include "waitkey.h"
+#include "task.h"
 
 void k_timer_callback(void) {
 	kthread_schedule();
@@ -46,6 +48,8 @@ void load_default_shell() {
 //	);	
 }
 
+uint8_t buf[512];
+
 void kernel_main(void) {
 	bios_puts("Matrix16 Kernel loaded!\n\n");
 
@@ -66,14 +70,38 @@ void kernel_main(void) {
 	bios_puts("Starting task scheduler...\n");
 	kthread_init();
 
-	bios_puts("Starting configured shell A:");
-	bios_puts(system_cfg.shell);
-	bios_puts("...\n");
+	bios_puts("Loading tasks...\n");
+
+	// okay, let's startup task0 first...
+	// for now, i'm gonna make task0 always the shell
 
 	load_default_shell();
-
-	bios_puts("Loading tasks...\n");
 	kthread_setup(KTHREAD_USER_TSK0_ID,SEG_USER0,0x0000,0xFFFE);
+
+	// let's make task1 HELLO.TSK as a test, so first locate it...
+	
+	uint16_t hello_lba;
+	uint16_t hello_len;
+	if(matfs16_locate_file("HELLO.TSK", 0, &hello_lba, &hello_len) != MATFS16_OK) kpanic("MISSING HELLO.TSK!");
+
+	// now we have it, we now need to parse the header and load it, so let's setup the buffers
+	task_buffers_t hello_buffers = { .memory_segment = SEG_USER1,
+					 .vram    = { .segment = 0xb900, .offset = 0x0000},
+					 .scratch = { .segment = SEG_KERN, .offset = (uint16_t)&buf}};
+
+	task_state_t hello_state;
+
+	// now we can load the thing
+	task_status_t status = task_restore(0,hello_lba,&hello_buffers,&hello_state);
+
+	if(status != TASK_OK) {
+		kpanic("FAILED TO LOAD HELLO.TSK!");
+	}
+
+	// if we get here, yay - let's setup the console for it correctly, and create the thread for it
+	kconsole_move_cursor(PAGENUM_VC1,hello_state.cursor_row,hello_state.cursor_col);
+	kthread_setup(KTHREAD_USER_TSK1_ID,SEG_USER1,0x0000,hello_state.resume_sp);
+
 	kthread_start();
 	kpanic("Something went wrong!");
 

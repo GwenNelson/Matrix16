@@ -147,11 +147,11 @@ void kthread_init(void) {
 	kthread_setup(KTHREAD_EVENT_ID,SEG_KERN,&kevent_task,(uint16_t)(&kevent_stack[KEVENT_STACK_LEN-2]));
 
 
-	// temporary silliness - we want to load the first task (probably the shell) into task0 in kmain.c
+	// temporary silliness - we want to load the first task (probably the shell) into task0 in kmain.c, and HELLO.TSK into task1
 //	kthread_setup(KTHREAD_USER_TSK0_ID, SEG_KERN, &test_task0,
 //		(uint16_t)(&kuser_test_stack[0][USER_TEST_STACK_LEN - 2]));
-	kthread_setup(KTHREAD_USER_TSK1_ID, SEG_KERN, &test_task1,
-		(uint16_t)(&kuser_test_stack[1][USER_TEST_STACK_LEN - 2]));
+//	kthread_setup(KTHREAD_USER_TSK1_ID, SEG_KERN, &test_task1,
+//		(uint16_t)(&kuser_test_stack[1][USER_TEST_STACK_LEN - 2]));
 	kthread_setup(KTHREAD_USER_TSK2_ID, SEG_KERN, &test_task2,
 		(uint16_t)(&kuser_test_stack[2][USER_TEST_STACK_LEN - 2]));
 	kthread_setup(KTHREAD_USER_TSK3_ID, SEG_KERN, &test_task3,

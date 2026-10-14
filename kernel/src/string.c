@@ -1,6 +1,19 @@
+#include <stddef.h>
 #include <stdint.h>
 
 #include "string.h"
+
+void *memcpy(void *dest, const void *src, size_t n) {
+	unsigned char *dest_bytes = dest;
+	const unsigned char *src_bytes = src;
+
+	while(n != 0) {
+		*dest_bytes++ = *src_bytes++;
+		n--;
+	}
+
+	return dest;
+}
 
 int strcmp(const char *a, const char *b) {
 	while(*a != '\0' && *a == *b) {
