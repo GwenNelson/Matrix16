@@ -77,3 +77,30 @@ void bios_put_hex(uint16_t n) {
 		shift -= 4;
 	}
 }
+
+bool bios_poll_key(uint16_t *key) {
+	uint16_t ax = 0x0100;
+	uint16_t flags;
+
+	if(key == 0) return false;
+
+	__asm__ volatile (
+		"int $0x16; pushf; popw %1"
+		: "+a" (ax), "=r" (flags)
+		:
+		: "cc"
+	);
+
+	if(flags & 0x0040) return false;
+
+	ax = 0x0000;
+	__asm__ volatile (
+		"int $0x16"
+		: "+a" (ax)
+		:
+		: "cc"
+	);
+
+	*key = ax;
+	return true;
+}

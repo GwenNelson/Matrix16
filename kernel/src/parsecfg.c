@@ -101,6 +101,11 @@ static void set_system_cfg_defaults(system_cfg_t* config) {
 	for(i = 0; i < 4; i++) config->tasks[i].source = SYSTEM_CFG_SOURCE_SUPER_A;
 }
 
+void reset_system_cfg_defaults(void) {
+	set_system_cfg_defaults(&system_cfg);
+	cfg_errors = false;
+}
+
 static void copy_system_cfg(system_cfg_t* destination, system_cfg_t* source) {
 	uint16_t i;
 

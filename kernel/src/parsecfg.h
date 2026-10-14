@@ -46,4 +46,5 @@ typedef struct system_cfg_t {
 extern system_cfg_t system_cfg;
 extern bool cfg_errors;
 
+void reset_system_cfg_defaults(void);
 void load_system_cfg(void);
