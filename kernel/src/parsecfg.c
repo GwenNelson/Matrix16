@@ -169,6 +169,7 @@ static char* parse_system_cfg_line(char* line, system_cfg_t* config, uint16_t* s
 	if(strcmp(key, "FILES") == 0) {
 		if(*seen & SYSTEM_CFG_SEEN_FILES) return "duplicate statement";
 		if(!parse_system_cfg_uint16(value, &config->files)) return "invalid statement";
+		if(config->files > SYSTEM_CFG_MAX_FILES) return "invalid statement";
 		*seen |= SYSTEM_CFG_SEEN_FILES;
 		return 0;
 	}

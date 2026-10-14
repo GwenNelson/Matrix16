@@ -30,7 +30,7 @@ $(BUILD)/switchto.o: $(SRC)/switchto.asm | $(BUILD)
 $(BUILD)/waitkey.o: $(SRC)/waitkey.asm | $(BUILD)
 	$(NASM) -f elf $< -o $@
 
-$(BUILD)/kmain.o: $(SRC)/kmain.c $(SRC)/bioscons.h $(SRC)/biosdisk.h $(SRC)/isr.h $(SRC)/kpanic.h $(SRC)/matfs16.h $(SRC)/parsecfg.h ../common/libc/include/string.h $(SRC)/utils.h | $(BUILD)
+$(BUILD)/kmain.o: $(SRC)/kmain.c $(SRC)/bioscons.h $(SRC)/biosdisk.h $(SRC)/isr.h $(SRC)/kfiles.h $(SRC)/kpanic.h $(SRC)/matfs16.h $(SRC)/parsecfg.h ../common/libc/include/string.h $(SRC)/utils.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/kmain.c -o $@
 
 $(BUILD)/parsecfg.o: $(SRC)/parsecfg.c $(SRC)/parsecfg.h $(SRC)/bioscons.h $(SRC)/matfs16.h ../common/libc/include/string.h | $(BUILD)
@@ -44,6 +44,9 @@ $(BUILD)/kpanic.o: $(SRC)/kpanic.c $(SRC)/kpanic.h $(SRC)/bioscons.h | $(BUILD)
 
 $(BUILD)/kheap.o: $(SRC)/kheap.c $(SRC)/kheap.h $(SRC)/kpanic.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/kheap.c -o $@
+
+$(BUILD)/kfiles.o: $(SRC)/kfiles.c $(SRC)/kfiles.h $(SRC)/kheap.h $(SRC)/kmemmap.h $(SRC)/kthread.h $(SRC)/matfs16.h $(SRC)/utils.h | $(BUILD)
+	$(CC) $(CFLAGS) -c $(SRC)/kfiles.c -o $@
 
 $(BUILD)/ksyscall.o: $(SRC)/ksyscall.c $(SRC)/ksyscall.h $(SRC)/8086.h $(SRC)/bioscons.h $(SRC)/kpanic.h $(SRC)/utils.h ../include/syscalls.inc | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/ksyscall.c -o $@
@@ -66,7 +69,7 @@ $(BUILD)/kthread.o: $(SRC)/kthread.c $(SRC)/kthread.h | $(BUILD)
 $(COMMON_LIBC): $(COMMON_LIBC_INPUTS)
 	$(MAKE) -C ../common/libc/
 
-$(BUILD)/kernel.elf: $(BUILD)/kentry.o $(BUILD)/isr.o $(BUILD)/switchto.o $(BUILD)/waitkey.o $(BUILD)/biosdisk.o $(BUILD)/kmain.o $(BUILD)/parsecfg.o $(BUILD)/bioscons.o $(BUILD)/kpanic.o $(BUILD)/kheap.o $(BUILD)/ksyscall.o $(BUILD)/utils.o $(BUILD)/matfs16.o $(BUILD)/task.o $(BUILD)/kconsole.o $(BUILD)/kthread.o $(COMMON_LIBC) $(SRC)/kernel.ld
+$(BUILD)/kernel.elf: $(BUILD)/kentry.o $(BUILD)/isr.o $(BUILD)/switchto.o $(BUILD)/waitkey.o $(BUILD)/biosdisk.o $(BUILD)/kmain.o $(BUILD)/parsecfg.o $(BUILD)/bioscons.o $(BUILD)/kpanic.o $(BUILD)/kheap.o $(BUILD)/kfiles.o $(BUILD)/ksyscall.o $(BUILD)/utils.o $(BUILD)/matfs16.o $(BUILD)/task.o $(BUILD)/kconsole.o $(BUILD)/kthread.o $(COMMON_LIBC) $(SRC)/kernel.ld
 	$(LD) $(LDFLAGS) -T $(SRC)/kernel.ld -o $@ $(filter-out $(SRC)/kernel.ld,$^)
 
 $(BUILD)/kernel.bin: $(BUILD)/kernel.elf

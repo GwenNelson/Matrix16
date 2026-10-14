@@ -14,6 +14,7 @@
 #include "waitkey.h"
 #include "task.h"
 #include "kheap.h"
+#include "kfiles.h"
 
 volatile uint16_t timer_ticks;
 
@@ -262,6 +263,7 @@ void kernel_main(void) {
 	}
 
 	kheap_init();
+	kfiles_init(system_cfg.files);
 
 	install_isr08();
 	install_isr09();
