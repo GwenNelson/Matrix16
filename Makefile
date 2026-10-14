@@ -26,7 +26,7 @@ fsgen:
 fsgen-clean:
 	$(MAKE) -C fsgen/ clean
 
-rootfs/SHELL.PRG: user/src/shell.asm
+rootfs/SHELL.TSK: user/src/shell.asm
 	mkdir -p rootfs
 	nasm -f bin $< -o $@
 
@@ -40,13 +40,13 @@ boot/stage2/build/stage2.bin: stage2
 
 kernel/build/kernel.bin: kernel
 
-rootfs.img: boot/stage1/build/bootsector.bin boot/stage2/build/stage2.bin kernel/build/kernel.bin fsgen rootfs/SHELL.PRG rootfs/HELLO.TSK rootfs/README.TXT rootfs/SYSTEM.CFG
+rootfs.img: boot/stage1/build/bootsector.bin boot/stage2/build/stage2.bin kernel/build/kernel.bin fsgen rootfs/SHELL.TSK rootfs/HELLO.TSK rootfs/README.TXT rootfs/SYSTEM.CFG
 	./fsgen/fsgen rootfs.img \
 		--bootsector boot/stage1/build/bootsector.bin \
 		--stage2 boot/stage2/build/stage2.bin \
 		--kernel kernel/build/kernel.bin \
 		--task0 HELLO.TSK=rootfs/HELLO.TSK \
-		--file SHELL.PRG=rootfs/SHELL.PRG \
+		--file SHELL.TSK=rootfs/SHELL.TSK \
 		--file README.TXT=rootfs/README.TXT \
 		--file SYSTEM.CFG=rootfs/SYSTEM.CFG
 
@@ -55,4 +55,4 @@ run: rootfs.img kernel
 		-drive file=rootfs.img,format=raw,if=floppy,index=0
 
 clean: stage1-clean stage2-clean kernel-clean fsgen-clean
-	rm -f rootfs/SHELL.PRG rootfs/HELLO.TSK rootfs.img
+	rm -f rootfs/SHELL.TSK rootfs/HELLO.TSK rootfs.img
