@@ -13,6 +13,8 @@
 
 _Static_assert(sizeof(mtsk16_header_t) == MTSK16_HEADER_SIZE,
 	"mtsk16_header_t must occupy one disk block");
+_Static_assert(sizeof(mtsk16_console_state_v1_t) == 276,
+	"MTSK16 console state layout has changed");
 _Static_assert(sizeof(mtsk16_context_isr_v1_t) == 26,
 	"MTSK16 ISR context layout has changed");
 
@@ -106,8 +108,12 @@ static void build_header(uint8_t *header) {
 		MTSK16_MEMORY_BLOCKS);
 	write_header_u16(header, offsetof(mtsk16_header_t, resume_sp),
 		MTSK16_INITIAL_RESUME_SP);
-	write_header_u16(header, offsetof(mtsk16_header_t, cursor_row), 0);
-	write_header_u16(header, offsetof(mtsk16_header_t, cursor_col), 0);
+	write_header_u16(header, offsetof(mtsk16_header_t, console_state_format),
+		MTSK16_CONSOLE_STATE_V1);
+	write_header_u16(header, offsetof(mtsk16_header_t, console_state_size),
+		sizeof(mtsk16_console_state_v1_t));
+	header[offsetof(mtsk16_header_t, console) +
+		offsetof(mtsk16_console_state_v1_t, attribute)] = DEFAULT_TEXT_ATTRIBUTE;
 }
 
 static void build_vram(uint8_t *vram) {

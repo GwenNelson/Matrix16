@@ -9,6 +9,10 @@
 #define TASK_SCREEN_ROWS 25
 #define TASK_SCREEN_COLS 80
 
+#if MTSK16_CONSOLE_INPUT_SIZE != KCONSOLE_INPUT_SIZE || MTSK16_CONSOLE_ANSI_PARAMS != KCONSOLE_ANSI_PARAMS
+#error "MTSK16 and kconsole state sizes do not match"
+#endif
+
 static const char task_magic[MTSK16_MAGIC_SIZE] = MTSK16_MAGIC;
 
 static bool magic_matches(const mtsk16_header_t __far *header) {
@@ -40,12 +44,36 @@ static task_status_t validate_header(const mtsk16_header_t __far *header) {
 	if(header->memory_stored_blocks != MTSK16_MEMORY_BLOCKS) return TASK_ERR_BAD_HEADER;
 	if(header->memory_last_block_bytes != MTSK16_MEMORY_LAST_BLOCK_BYTES) return TASK_ERR_BAD_HEADER;
 	if(header->memory_decoded_blocks != MTSK16_MEMORY_BLOCKS) return TASK_ERR_BAD_HEADER;
-	if(header->cursor_row >= TASK_SCREEN_ROWS) return TASK_ERR_BAD_HEADER;
-	if(header->cursor_col >= TASK_SCREEN_COLS) return TASK_ERR_BAD_HEADER;
+	if(header->console_state_format != MTSK16_CONSOLE_STATE_V1) return TASK_ERR_BAD_HEADER;
+	if(header->console_state_size != sizeof(mtsk16_console_state_v1_t)) return TASK_ERR_BAD_HEADER;
+	if(header->console.row >= TASK_SCREEN_ROWS || header->console.col >= TASK_SCREEN_COLS) return TASK_ERR_BAD_HEADER;
+	if(header->console.saved_row >= TASK_SCREEN_ROWS || header->console.saved_col >= TASK_SCREEN_COLS) return TASK_ERR_BAD_HEADER;
+	if(header->console.wrap > 1 || header->console.caps_lock > 1 || header->console.num_lock > 1) return TASK_ERR_BAD_HEADER;
+	if(header->console.ansi_state > 3 || header->console.param_index >= MTSK16_CONSOLE_ANSI_PARAMS) return TASK_ERR_BAD_HEADER;
+	if(header->console.input_length > MTSK16_CONSOLE_INPUT_SIZE) return TASK_ERR_BAD_HEADER;
+	for(uint8_t i = 0; i < MTSK16_CONSOLE_ANSI_PARAMS; i++) {
+		if(header->console.params[i] > 999) return TASK_ERR_BAD_HEADER;
+	}
 	if((header->resume_sp & 1) != 0) return TASK_ERR_INVALID_CONTEXT;
 	if(header->resume_sp > MTSK16_MAX_RESUME_SP) return TASK_ERR_INVALID_CONTEXT;
 
 	return TASK_OK;
+}
+
+static void copy_console_state(const mtsk16_console_state_v1_t __far *source, kconsole_saved_state_t *destination) {
+	destination->row = source->row;
+	destination->col = source->col;
+	destination->saved_row = source->saved_row;
+	destination->saved_col = source->saved_col;
+	destination->attribute = source->attribute;
+	destination->wrap = source->wrap;
+	destination->caps_lock = source->caps_lock;
+	destination->num_lock = source->num_lock;
+	destination->ansi_state = source->ansi_state;
+	destination->param_index = source->param_index;
+	for(uint8_t i = 0; i < MTSK16_CONSOLE_ANSI_PARAMS; i++) destination->params[i] = source->params[i];
+	destination->input_length = source->input_length;
+	for(uint16_t i = 0; i < source->input_length; i++) destination->input[i] = source->input[i];
 }
 
 static task_status_t next_required_block(uint8_t drive_no, uint16_t current_lba, uint16_t *next_lba) {
@@ -62,8 +90,6 @@ task_status_t task_restore(uint8_t drive_no, uint16_t first_lba, const task_buff
 	uint16_t current_lba;
 	uint16_t next_lba;
 	uint16_t resume_sp;
-	uint16_t cursor_row;
-	uint16_t cursor_col;
 	uint16_t screen_mode;
 	uint16_t vram_size;
 	uint16_t memory_encoding;
@@ -85,8 +111,6 @@ task_status_t task_restore(uint8_t drive_no, uint16_t first_lba, const task_buff
 	if(status != TASK_OK) return status;
 
 	resume_sp = header->resume_sp;
-	cursor_row = header->cursor_row;
-	cursor_col = header->cursor_col;
 	screen_mode = header->screen_mode;
 	vram_size = header->vram_size;
 	memory_encoding = header->memory_encoding;
@@ -125,11 +149,10 @@ task_status_t task_restore(uint8_t drive_no, uint16_t first_lba, const task_buff
 	context->cs = buffers->memory_segment;
 
 	state->resume_sp = resume_sp;
-	state->cursor_row = cursor_row;
-	state->cursor_col = cursor_col;
 	state->screen_mode = screen_mode;
 	state->vram_size = vram_size;
 	state->memory_encoding = memory_encoding;
+	copy_console_state(&header->console, &state->console);
 
 	return TASK_OK;
 }

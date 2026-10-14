@@ -14,7 +14,11 @@ static void k_syscall_sys_write(registers_t *regs) {
 	}
 	char __far *buf = mk_farptr(regs->ds, regs->cx);
 	for(int i = 0; i < regs->dx; i++) {
-		kconsole_putc(console,buf[i]);
+		if(buf[i]=='\n') {
+			kconsole_puts(console,"\r\n");
+		} else {
+			kconsole_putc(console,buf[i]);
+		}
 //		bios_putchar(buf[i], console);
 	}
 }

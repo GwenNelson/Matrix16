@@ -2,6 +2,8 @@
 
 #include <stdint.h>
 
+#include "kconsole.h"
+
 /* Task images contain a suspended user context only. They never contain a
  * syscall continuation or a kernel stack. */
 
@@ -33,11 +35,10 @@ typedef struct task_buffers_t {
 
 typedef struct task_state_t {
 	uint16_t resume_sp;
-	uint16_t cursor_row;
-	uint16_t cursor_col;
 	uint16_t screen_mode;
 	uint16_t vram_size;
 	uint16_t memory_encoding;
+	kconsole_saved_state_t console;
 } task_state_t;
 
 /*
