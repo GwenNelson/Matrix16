@@ -14,7 +14,10 @@
 #include "waitkey.h"
 #include "task.h"
 
+volatile uint16_t timer_ticks;
+
 void k_timer_callback(void) {
+	timer_ticks++;
 	kthread_schedule();
 }
 
@@ -49,6 +52,47 @@ void load_default_shell() {
 }
 
 uint8_t buf[512];
+
+static void sleepfor(uint16_t ticks) {
+	uint16_t flags;
+	uint16_t start;
+
+	__asm__ volatile ("pushf; popw %0; cli" : "=r" (flags) : : "memory");
+	start = timer_ticks;
+
+	while((uint16_t)(timer_ticks - start) < ticks)
+		__asm__ volatile ("sti; hlt; cli" : : : "memory");
+
+	__asm__ volatile ("pushw %0; popf" : : "r" (flags) : "memory", "cc");
+}
+
+static void do_start_delay(void) {
+	uint16_t remaining = system_cfg.start_delay;
+	uint8_t ticks_until_dot = 5;
+	char ignored;
+
+	if(remaining == 0) return;
+
+	while(kconsole_getc(PAGENUM_VC0, &ignored))
+		;
+
+	bios_puts("Press any key to start immediately");
+
+	while(remaining != 0) {
+		if(kconsole_getc(PAGENUM_VC0, &ignored)) break;
+
+		sleepfor(1);
+		remaining--;
+
+		if(kconsole_getc(PAGENUM_VC0, &ignored)) break;
+		if(--ticks_until_dot == 0) {
+			bios_puts(".");
+			ticks_until_dot = 5;
+		}
+	}
+
+	bios_puts("\n");
+}
 
 void kernel_main(void) {
 	bios_puts("Matrix16 Kernel loaded!\n\n");
@@ -99,8 +143,8 @@ void kernel_main(void) {
 	}
 
 	// give the user a moment, then we can start...
-	bios_puts("Press any key to start...\n");
-	kconsole_wait_for_key(PAGENUM_VC0);
+	do_start_delay();
+	
 	kconsole_init(PAGENUM_VC0);
 
 	// if we get here, yay - let's setup the console for it correctly, and create the thread for it

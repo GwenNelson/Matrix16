@@ -65,11 +65,32 @@ static bool valid_system_cfg_filename(const char* filename) {
 	return true;
 }
 
+static bool parse_system_cfg_uint16(char* value, uint16_t* result) {
+	uint16_t number = 0;
+
+	if(*value == '\0') return false;
+
+	while(*value != '\0') {
+		uint8_t digit;
+
+		if(*value < '0' || *value > '9') return false;
+		digit = (uint8_t)(*value - '0');
+		if(number > 6553 || (number == 6553 && digit > 5)) return false;
+
+		number = number * 10 + digit;
+		value++;
+	}
+
+	*result = number;
+	return true;
+}
+
 static void set_system_cfg_defaults(system_cfg_t* config) {
 	uint16_t i;
 
 	strcpy(config->shell, "SHELL.TSK");
 	config->default_action = SYSTEM_CFG_DEFAULT_SHELL;
+	config->start_delay = SYSTEM_CFG_DEFAULT_START_DELAY;
 
 	for(i = 0; i < SYSTEM_CFG_TASK_COUNT; i++) {
 		config->tasks[i].source = SYSTEM_CFG_SOURCE_NONE;
@@ -85,6 +106,7 @@ static void copy_system_cfg(system_cfg_t* destination, system_cfg_t* source) {
 
 	strcpy(destination->shell, source->shell);
 	destination->default_action = source->default_action;
+	destination->start_delay = source->start_delay;
 
 	for(i = 0; i < SYSTEM_CFG_TASK_COUNT; i++) {
 		destination->tasks[i].source = source->tasks[i].source;
@@ -127,7 +149,7 @@ static char* parse_system_cfg_source(char* value, uint16_t task_number, system_c
 	return 0;
 }
 
-static char* parse_system_cfg_line(char* line, system_cfg_t* config, bool* task_seen, bool* shell_seen, bool* default_seen) {
+static char* parse_system_cfg_line(char* line, system_cfg_t* config, bool* task_seen, bool* shell_seen, bool* default_seen, bool* start_delay_seen) {
 	char* comment;
 	char* equals;
 	char* key;
@@ -166,6 +188,13 @@ static char* parse_system_cfg_line(char* line, system_cfg_t* config, bool* task_
 		else if(strcmp(value, "NONE") == 0) config->default_action = SYSTEM_CFG_DEFAULT_NONE;
 		else return "DEFAULT must be SHELL or NONE";
 		*default_seen = true;
+		return 0;
+	}
+
+	if(strcmp(key, "STARTDELAY") == 0) {
+		if(*start_delay_seen) return "STARTDELAY is defined more than once";
+		if(!parse_system_cfg_uint16(value, &config->start_delay)) return "STARTDELAY must be a decimal number from 0 to 65535";
+		*start_delay_seen = true;
 		return 0;
 	}
 
@@ -218,6 +247,7 @@ void load_system_cfg(void) {
 	bool task_seen[SYSTEM_CFG_TASK_COUNT];
 	bool shell_seen = false;
 	bool default_seen = false;
+	bool start_delay_seen = false;
 	uint8_t block[MATFS16_BLOCK_SIZE];
 	char line[SYSTEM_CFG_MAX_LINE_LENGTH + 1];
 	matfs16_status_t status;
@@ -277,7 +307,7 @@ void load_system_cfg(void) {
 			}
 			if(c == '\n') {
 				line[line_length] = '\0';
-				parse_error = parse_system_cfg_line(line, &parsed_config, task_seen, &shell_seen, &default_seen);
+				parse_error = parse_system_cfg_line(line, &parsed_config, task_seen, &shell_seen, &default_seen, &start_delay_seen);
 				if(parse_error != 0) {
 					report_system_cfg_line_error(line_number, parse_error);
 					return;
@@ -307,7 +337,7 @@ void load_system_cfg(void) {
 
 	if(line_length != 0) {
 		line[line_length] = '\0';
-		parse_error = parse_system_cfg_line(line, &parsed_config, task_seen, &shell_seen, &default_seen);
+		parse_error = parse_system_cfg_line(line, &parsed_config, task_seen, &shell_seen, &default_seen, &start_delay_seen);
 		if(parse_error != 0) {
 			report_system_cfg_line_error(line_number, parse_error);
 			return;

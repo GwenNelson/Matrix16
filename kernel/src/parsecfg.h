@@ -1,10 +1,12 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "matfs16.h"
 
 #define SYSTEM_CFG_TASK_COUNT 6
+#define SYSTEM_CFG_DEFAULT_START_DELAY 55
 
 typedef enum system_cfg_source_t {
 	SYSTEM_CFG_SOURCE_NONE,
@@ -37,6 +39,7 @@ typedef struct system_cfg_task_t {
 typedef struct system_cfg_t {
 	char shell[MATFS16_FILENAME_MAXLEN];
 	system_cfg_default_t default_action;
+	uint16_t start_delay;
 	system_cfg_task_t tasks[SYSTEM_CFG_TASK_COUNT];
 } system_cfg_t;
 
