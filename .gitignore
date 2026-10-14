@@ -3,5 +3,7 @@
 *.o
 kernel/build/*
 fsgen/fsgen
+taskgen/taskgen
+user/build/*
 rootfs/*.PRG
 rootfs/*.TSK
