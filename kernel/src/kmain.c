@@ -98,9 +98,15 @@ void kernel_main(void) {
 		kpanic("FAILED TO LOAD HELLO.TSK!");
 	}
 
+	// give the user a moment, then we can start...
+	bios_puts("Press any key to start...\n");
+	kconsole_wait_for_key(PAGENUM_VC0);
+	kconsole_init(PAGENUM_VC0);
+
 	// if we get here, yay - let's setup the console for it correctly, and create the thread for it
 	if(!kconsole_restore_state(PAGENUM_VC1,&hello_state.console)) kpanic("FAILED TO RESTORE CONSOLE!");
 	kthread_setup(KTHREAD_USER_TSK1_ID,SEG_USER1,0x0000,hello_state.resume_sp,PAGENUM_VC1);
+
 
 	kthread_start();
 	kpanic("Something went wrong!");

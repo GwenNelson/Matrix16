@@ -419,6 +419,22 @@ bool kconsole_getc(uint8_t page_num, char *out) {
 	return true;
 }
 
+void kconsole_wait_for_key(uint8_t page_num) {
+	uint16_t flags;
+	char ignored;
+
+	if(page_num >= CONSOLE_COUNT) return;
+
+	__asm__ volatile ("pushf; popw %0; cli" : "=r" (flags) : : "memory");
+	while(kconsole_getc(page_num, &ignored))
+		;
+
+	while(!kconsole_getc(page_num, &ignored))
+		__asm__ volatile ("sti; hlt; cli" : : : "memory");
+
+	__asm__ volatile ("pushw %0; popf" : : "r" (flags) : "memory", "cc");
+}
+
 static const char normal_keys[58] = {
 	[0x01] = 27,
 	[0x02] = '1', [0x03] = '2', [0x04] = '3', [0x05] = '4',
