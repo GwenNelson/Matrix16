@@ -34,7 +34,7 @@ copy_initial_frame:
 
 ; void switch_to(uint16_t ss, uint16_t sp, uint16_t *old_ss,
 ;                uint16_t *old_sp, uint16_t first_run)
-; A new thread's SP points to the interrupt frame built by kthread_setup().
+; A new thread's SP points to an initial or restored interrupt frame.
 ; An existing thread's SP points to this routine's saved C call frame.
 switch_to:
 	push bp

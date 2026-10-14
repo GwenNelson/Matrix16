@@ -32,9 +32,13 @@ taskgen:
 taskgen-clean:
 	$(MAKE) -C taskgen/ clean
 
-rootfs/SHELL.TSK: user/src/shell.asm
-	mkdir -p rootfs
+user/build/SHELL.BIN: user/src/shell.asm
+	mkdir -p user/build
 	nasm -f bin $< -o $@
+
+rootfs/SHELL.TSK: user/build/SHELL.BIN taskgen
+	mkdir -p rootfs
+	./taskgen/taskgen $< $@
 
 user/build/HELLO.BIN: user/src/hello.asm
 	mkdir -p user/build
@@ -65,4 +69,4 @@ run: rootfs.img kernel
 		-drive file=rootfs.img,format=raw,if=floppy,index=0
 
 clean: stage1-clean stage2-clean kernel-clean fsgen-clean taskgen-clean
-	rm -f user/build/HELLO.BIN rootfs/SHELL.TSK rootfs/HELLO.TSK rootfs.img
+	rm -f user/build/SHELL.BIN user/build/HELLO.BIN rootfs/SHELL.TSK rootfs/HELLO.TSK rootfs.img

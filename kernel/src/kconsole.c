@@ -59,6 +59,11 @@ static volatile uint16_t __far *page_memory(uint8_t page_num) {
 	return (volatile uint16_t __far *)((uint32_t)page_segments[page_num] << 16);
 }
 
+uint16_t kconsole_vram_segment(uint8_t page_num) {
+	if(page_num >= CONSOLE_COUNT) return VRAM_SEG_INVALID;
+	return page_segments[page_num];
+}
+
 static void update_cursor(uint8_t page_num) {
 	uint16_t ax = 0x0200;
 	uint16_t bx = (uint16_t)page_num << 8;

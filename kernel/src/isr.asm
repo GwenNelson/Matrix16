@@ -114,6 +114,7 @@ old_timer_seg dw 0
 %endmacro
 
 install_isr80:
+	push es
 	xor ax,ax
 	mov es,ax
 
@@ -121,6 +122,7 @@ install_isr80:
 	mov word [es:0x0200], isr80_wrapper
 	mov word [es:0x0202], cs
 	sti
+	pop es
 	ret
 
 

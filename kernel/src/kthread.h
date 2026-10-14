@@ -51,6 +51,7 @@ void kthread_init(void);  // set everything up
 void kthread_start(void); // actually start scheduling tasks - does not return
 
 int kthread_setup(kthread_id_t id, uint16_t seg, kthread_entry_t entry, uint16_t stack_top, uint8_t console);
+int kthread_setup_restored(kthread_id_t id, uint16_t seg, uint16_t sp, uint8_t console);
 
 void kthread_yield(void);
 
@@ -64,4 +65,3 @@ void kthread_exit(kthread_id_t id);
 
 /* Called by the timer interrupt stub */
 void kthread_schedule(void);
-

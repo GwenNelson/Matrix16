@@ -73,9 +73,7 @@ static void do_start_delay(void) {
 
 	if(remaining == 0) return;
 
-	while(kconsole_getc(PAGENUM_VC0, &ignored))
-		;
-
+	while(kconsole_getc(PAGENUM_VC0, &ignored));
 
 	while(remaining != 0) {
 		if(kconsole_getc(PAGENUM_VC0, &ignored)) break;
@@ -147,6 +145,36 @@ static void skip_systemcfg_prompt(void) {
 	__asm__ volatile ("pushw %0; popf" : : "r" (flags) : "memory", "cc");
 }
 
+kconsole_saved_state_t task_console_states[4]; // we only have 4 VCs max
+
+bool startup_task(const char* filename, uint8_t drive_num, uint16_t seg, kthread_id_t thread_id, uint8_t console) {
+	uint16_t task_lba;
+	uint16_t task_len;
+
+	if(matfs16_locate_file(filename,drive_num,&task_lba,&task_len) != MATFS16_OK) return false;
+
+	uint16_t vram_seg = kconsole_vram_segment(console);
+	if(vram_seg == VRAM_SEG_INVALID) return false;
+
+	uint8_t scratch_buf[512];
+
+	task_buffers_t t_buffers = { .memory_segment = seg,
+				   .vram    = { .segment = vram_seg, .offset = 0x0000},
+				   .scratch = { .segment = SEG_KERN, .offset = (uint16_t)&scratch_buf}};
+
+	task_state_t t_state;
+	task_status_t status = task_restore(drive_num,task_lba,&t_buffers,&t_state);
+
+	if(status != TASK_OK) return false;
+
+	// stash the console state, so we can restore it correctly after all tasks are loaded, before we actually start them up
+	task_console_states[console] = t_state.console;
+
+	// setup the thread
+	kthread_setup_restored(thread_id,seg,t_state.resume_sp,console);
+	return true;
+}
+
 void kernel_main(void) {
 	bios_puts("Starting Matrix16...\n");
 
@@ -163,14 +191,18 @@ void kernel_main(void) {
 
 	kthread_init();
 
+	do_start_delay();
+
 	// okay, let's startup task0 first...
 	// for now, i'm gonna make task0 always the shell
+	if(!startup_task("SHELL.TSK",0,SEG_USER0,KTHREAD_USER_TSK0_ID,PAGENUM_VC0)) kpanic("Could not open SHELL.TSK!");
 
-	load_default_shell();
-	kthread_setup(KTHREAD_USER_TSK0_ID,SEG_USER0,0x0000,0xFFFE,PAGENUM_VC0);
+
+	//load_default_shell();
+	//kthread_setup(KTHREAD_USER_TSK0_ID,SEG_USER0,0x0000,0xFFFE,PAGENUM_VC0);
 
 	// let's make task1 HELLO.TSK as a test, so first locate it...
-	
+/*	
 	uint16_t hello_lba;
 	uint16_t hello_len;
 	if(matfs16_locate_file("HELLO.TSK", 0, &hello_lba, &hello_len) != MATFS16_OK) kpanic("MISSING HELLO.TSK!");
@@ -188,15 +220,16 @@ void kernel_main(void) {
 	if(status != TASK_OK) {
 		kpanic("FAILED TO LOAD HELLO.TSK!");
 	}
-
-	// give the user a moment, then we can start...
-	do_start_delay();
+*/
+	if(!startup_task("HELLO.TSK",0,SEG_USER1,KTHREAD_USER_TSK1_ID,PAGENUM_VC1)) kpanic("Could not open HELLO.TSK!");
 	
-	kconsole_init(PAGENUM_VC0);
+	for(int i=0; i<4; i++) {
+		kconsole_restore_state(i,&task_console_states[i]);
+	}
 
 	// if we get here, yay - let's setup the console for it correctly, and create the thread for it
-	if(!kconsole_restore_state(PAGENUM_VC1,&hello_state.console)) kpanic("FAILED TO RESTORE CONSOLE!");
-	kthread_setup(KTHREAD_USER_TSK1_ID,SEG_USER1,0x0000,hello_state.resume_sp,PAGENUM_VC1);
+//	if(!kconsole_restore_state(PAGENUM_VC1,&hello_state.console)) kpanic("FAILED TO RESTORE CONSOLE!");
+//	kthread_setup_restored(KTHREAD_USER_TSK1_ID,SEG_USER1,hello_state.resume_sp,PAGENUM_VC1);
 
 
 	kthread_start();

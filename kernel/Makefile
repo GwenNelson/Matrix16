@@ -1,7 +1,7 @@
 NASM    = nasm
 CC      = ia16-elf-gcc
 LD      = ia16-elf-ld
-CFLAGS  = -march=i8088 -Os -ffreestanding -ffunction-sections -fdata-sections
+CFLAGS  = -march=i8088 -Os -ffreestanding -ffixed-es -ffunction-sections -fdata-sections
 LDFLAGS = --gc-sections
 OBJCOPY = ia16-elf-objcopy
 

@@ -55,6 +55,7 @@ static void kevent_task(void) {
 
 static bool scheduler_ready    = false;              // guard against scheduling too early
 kthread_id_t cur_thread = KTHREAD_INVALID_ID; // also read by the interrupt stubs
+static bool started[KTHREAD_MAX_ID + 1];
 
 kthread_id_t kthread_cur_thread(void) {
 	return cur_thread;
@@ -133,9 +134,23 @@ int kthread_setup(kthread_id_t id, uint16_t seg, kthread_entry_t entry, uint16_t
 	threads[id].sp    = stack_top - 13 * sizeof(uint16_t);
 	threads[id].console = console;
 	threads[id].state = KTHREAD_READY;
+	started[id] = false;
 
 	(void)entry;
 	(void)stack_top;
+	return 0;
+}
+
+int kthread_setup_restored(kthread_id_t id, uint16_t seg, uint16_t sp, uint8_t console) {
+	/* SP already points to a complete interrupt frame in the restored task
+	 * segment. The first switch restores that frame and IRET obtains IP, CS,
+	 * and FLAGS from it. Do not build or copy another frame here. */
+	threads[id].id = id;
+	threads[id].ss = seg;
+	threads[id].sp = sp;
+	threads[id].console = console;
+	threads[id].state = KTHREAD_READY;
+	started[id] = false;
 	return 0;
 }
 
@@ -177,7 +192,6 @@ void kthread_schedule(void) {
 	uint16_t irq_flags;
 	__asm__ volatile ("pushf; popw %0; cli" : "=r" (irq_flags) : : "memory");
 
-	static bool started[KTHREAD_MAX_ID + 1];
 	kthread_id_t previous = cur_thread;
 	if(previous != KTHREAD_INVALID_ID &&
 	   threads[previous].state == KTHREAD_RUNNING)
