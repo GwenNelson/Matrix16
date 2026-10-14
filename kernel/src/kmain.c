@@ -76,7 +76,7 @@ void kernel_main(void) {
 	// for now, i'm gonna make task0 always the shell
 
 	load_default_shell();
-	kthread_setup(KTHREAD_USER_TSK0_ID,SEG_USER0,0x0000,0xFFFE);
+	kthread_setup(KTHREAD_USER_TSK0_ID,SEG_USER0,0x0000,0xFFFE,PAGENUM_VC0);
 
 	// let's make task1 HELLO.TSK as a test, so first locate it...
 	
@@ -100,7 +100,7 @@ void kernel_main(void) {
 
 	// if we get here, yay - let's setup the console for it correctly, and create the thread for it
 	kconsole_move_cursor(PAGENUM_VC1,hello_state.cursor_row,hello_state.cursor_col);
-	kthread_setup(KTHREAD_USER_TSK1_ID,SEG_USER1,0x0000,hello_state.resume_sp);
+	kthread_setup(KTHREAD_USER_TSK1_ID,SEG_USER1,0x0000,hello_state.resume_sp,PAGENUM_VC1);
 
 	kthread_start();
 	kpanic("Something went wrong!");

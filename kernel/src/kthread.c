@@ -61,6 +61,13 @@ kthread_id_t kthread_cur_thread(void) {
 	return cur_thread;
 }
 
+bool kthread_current_console(uint8_t *console) {
+	if(console == 0 || cur_thread > KTHREAD_MAX_ID) return false;
+	if(threads[cur_thread].console == KTHREAD_CONSOLE_NONE) return false;
+	*console = threads[cur_thread].console;
+	return true;
+}
+
 void test_task0(void) {
 	kconsole_init(PAGENUM_VC0);
 //	kconsole_switchto(PAGENUM_VC0);
@@ -140,22 +147,22 @@ void kthread_init(void) {
 	}
 
 	// let's first setup the idle thread
-	kthread_setup(KTHREAD_IDLE_ID, SEG_KERN,&kidle_task, (uint16_t)(&kidle_stack[KIDLE_STACK_LEN-2]));
+	kthread_setup(KTHREAD_IDLE_ID, SEG_KERN,&kidle_task, (uint16_t)(&kidle_stack[KIDLE_STACK_LEN-2]), KTHREAD_CONSOLE_NONE);
 
 	// and let's also setup our event thread
 	kconsole_set_switch_cb(&kevent_kbd_cb);
-	kthread_setup(KTHREAD_EVENT_ID,SEG_KERN,&kevent_task,(uint16_t)(&kevent_stack[KEVENT_STACK_LEN-2]));
+	kthread_setup(KTHREAD_EVENT_ID,SEG_KERN,&kevent_task,(uint16_t)(&kevent_stack[KEVENT_STACK_LEN-2]), KTHREAD_CONSOLE_NONE);
 
 
 	// temporary silliness - we want to load the first task (probably the shell) into task0 in kmain.c, and HELLO.TSK into task1
 //	kthread_setup(KTHREAD_USER_TSK0_ID, SEG_KERN, &test_task0,
-//		(uint16_t)(&kuser_test_stack[0][USER_TEST_STACK_LEN - 2]));
+//		(uint16_t)(&kuser_test_stack[0][USER_TEST_STACK_LEN - 2]), PAGENUM_VC0);
 //	kthread_setup(KTHREAD_USER_TSK1_ID, SEG_KERN, &test_task1,
-//		(uint16_t)(&kuser_test_stack[1][USER_TEST_STACK_LEN - 2]));
+//		(uint16_t)(&kuser_test_stack[1][USER_TEST_STACK_LEN - 2]), PAGENUM_VC1);
 	kthread_setup(KTHREAD_USER_TSK2_ID, SEG_KERN, &test_task2,
-		(uint16_t)(&kuser_test_stack[2][USER_TEST_STACK_LEN - 2]));
+		(uint16_t)(&kuser_test_stack[2][USER_TEST_STACK_LEN - 2]), PAGENUM_VC2);
 	kthread_setup(KTHREAD_USER_TSK3_ID, SEG_KERN, &test_task3,
-		(uint16_t)(&kuser_test_stack[3][USER_TEST_STACK_LEN - 2]));
+		(uint16_t)(&kuser_test_stack[3][USER_TEST_STACK_LEN - 2]), PAGENUM_VC3);
 
 }
 
@@ -166,7 +173,7 @@ void kthread_start(void) {
 	for(;;) asm("hlt"); // we wait here, the timer ISR will fire and scheduler will go
 }
 
-int kthread_setup(kthread_id_t id, uint16_t seg, kthread_entry_t entry, uint16_t stack_top) {
+int kthread_setup(kthread_id_t id, uint16_t seg, kthread_entry_t entry, uint16_t stack_top, uint8_t console) {
 	// okay, so first we need to setup the stack as it would be expected to look
 
 	// Build the frame on our kernel stack, then copy it into the target SS.
@@ -207,6 +214,7 @@ int kthread_setup(kthread_id_t id, uint16_t seg, kthread_entry_t entry, uint16_t
 	threads[id].id    = id;
 	threads[id].ss    = seg;
 	threads[id].sp    = stack_top - 13 * sizeof(uint16_t);
+	threads[id].console = console;
 	threads[id].state = KTHREAD_READY;
 
 	(void)entry;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 
 /* Keep the saved flags in C storage so each asm block leaves SP balanced. */
@@ -26,6 +27,7 @@ typedef struct kthread_t {
 
     kthread_state_t state;
     uint8_t id;
+    uint8_t console;
 
 } kthread_t;
 
@@ -40,6 +42,7 @@ typedef struct kthread_t {
 #define KTHREAD_USER_RSV_ID  6 /* this is reserved for now, might be used eventually for the future serial console task */
 
 #define KTHREAD_INVALID_ID 255
+#define KTHREAD_CONSOLE_NONE 255
 
 typedef void (*kthread_entry_t)(void);
 
@@ -47,11 +50,12 @@ void kthread_init(void);  // set everything up
 
 void kthread_start(void); // actually start scheduling tasks - does not return
 
-int kthread_setup(kthread_id_t id, uint16_t seg, kthread_entry_t entry, uint16_t stack_top);
+int kthread_setup(kthread_id_t id, uint16_t seg, kthread_entry_t entry, uint16_t stack_top, uint8_t console);
 
 void kthread_yield(void);
 
 kthread_id_t kthread_cur_thread(void);
+bool kthread_current_console(uint8_t *console);
 
 void kthread_block(kthread_id_t id);
 void kthread_wake(kthread_id_t id);
@@ -60,5 +64,4 @@ void kthread_exit(kthread_id_t id);
 
 /* Called by the timer interrupt stub */
 void kthread_schedule(void);
-
 
