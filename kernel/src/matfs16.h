@@ -63,7 +63,7 @@ typedef struct __attribute__((packed)) matfs_directory_block_t {
 	uint16_t next_block;
 	uint16_t parent_start;
 	uint16_t parent_len;
-	uint16_t entry_count;
+	uint16_t entry_count; /* live files; deleted slots remain empty */
 	uint16_t checksum;
 	uint8_t  padding[16];
 	matfs_directory_entry_t entries[MATFS16_DIRECTORY_ENTRIES_PER_BLOCK];
@@ -88,8 +88,9 @@ typedef enum matfs16_status {
 } matfs16_status_t;
 
 /*
- * Copy one zero-based entry from the root directory into caller-owned
- * storage. MATFS16_END_OF_DIRECTORY means that index is past the last entry.
+ * Copy one zero-based live file entry from the root directory into
+ * caller-owned storage, skipping deleted slots. MATFS16_END_OF_DIRECTORY
+ * means that index is past the last live file.
  */
 matfs16_status_t matfs16_read_direntry(uint8_t drive_no, uint16_t index, matfs_directory_entry_t *entry);
 
