@@ -1,5 +1,6 @@
 #include "parsecfg.h"
 #include "bioscons.h"
+#include "kfiles.h"
 #include "string.h"
 
 #include <stdbool.h>
@@ -199,6 +200,7 @@ static char* parse_system_cfg_line(char* line, system_cfg_t* config, uint16_t* s
 		if(*seen & SYSTEM_CFG_SEEN_FILES) return "duplicate statement";
 		if(!parse_system_cfg_uint16(value, &config->files)) return "invalid statement";
 		if(config->files > SYSTEM_CFG_MAX_FILES) return "invalid statement";
+		if(config->files > kfiles_max_descriptors()) return "FILES exceeds kernel heap capacity";
 		*seen |= SYSTEM_CFG_SEEN_FILES;
 		return 0;
 	}

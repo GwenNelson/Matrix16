@@ -15,6 +15,9 @@ static uint16_t file_descriptor_count;
 static uint8_t* file_scratch;
 static volatile uint8_t file_lock;
 
+extern uint8_t kernel_heap_start;
+extern uint8_t kernel_heap_end;
+
 static void acquire_file_lock(void) {
 	uint8_t previous;
 
@@ -61,7 +64,8 @@ static uint16_t directory_bytes_available(file_desc_t* descriptor) {
 void kfiles_init(uint16_t descriptor_count) {
 	uint16_t i;
 
-	if(descriptor_count > 255) descriptor_count = 255;
+	if(descriptor_count > kfiles_max_descriptors())
+		descriptor_count = kfiles_max_descriptors();
 
 	file_descriptor_count = descriptor_count;
 	file_descriptors = descriptor_count == 0 ? NULL : (file_desc_t*)kheap_alloc(descriptor_count * sizeof(file_desc_t));
@@ -69,6 +73,33 @@ void kfiles_init(uint16_t descriptor_count) {
 	file_lock = 0;
 
 	for(i = 0; i < file_descriptor_count; i++) file_descriptors[i].used = false;
+}
+
+uint16_t kfiles_max_descriptors(void) {
+	uint16_t heap_start = (uint16_t)&kernel_heap_start;
+	uint16_t heap_end = (uint16_t)&kernel_heap_end;
+	uint16_t heap_bytes;
+	uint16_t descriptor_bytes;
+	uint16_t maximum;
+
+	if(heap_end <= heap_start) return 0;
+	heap_bytes = heap_end - heap_start;
+	if(heap_bytes < MATFS16_BLOCK_SIZE) return 0;
+
+	/* Leave room for both allocations made when at least one descriptor is
+	 * configured: the descriptor table and one 512-byte I/O scratch block. */
+	maximum = (heap_bytes - MATFS16_BLOCK_SIZE) / sizeof(file_desc_t);
+	if(maximum > KFILES_MAX_DESCRIPTORS) maximum = KFILES_MAX_DESCRIPTORS;
+
+	/* kheap_alloc rounds odd allocation sizes up to an even byte count. */
+	while(maximum != 0) {
+		descriptor_bytes = maximum * sizeof(file_desc_t);
+		if(descriptor_bytes & 1) descriptor_bytes++;
+		if(descriptor_bytes <= heap_bytes - MATFS16_BLOCK_SIZE) break;
+		maximum--;
+	}
+
+	return maximum;
 }
 
 bool task_has_open_files(kthread_id_t id) {

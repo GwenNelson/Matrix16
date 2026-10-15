@@ -33,7 +33,7 @@ $(BUILD)/waitkey.o: $(SRC)/waitkey.asm | $(BUILD)
 $(BUILD)/kmain.o: $(SRC)/kmain.c $(SRC)/bioscons.h $(SRC)/biosdisk.h $(SRC)/isr.h $(SRC)/kfiles.h $(SRC)/kpanic.h $(SRC)/matfs16.h $(SRC)/mtsk16.h $(SRC)/parsecfg.h ../common/libc/include/string.h $(SRC)/utils.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/kmain.c -o $@
 
-$(BUILD)/parsecfg.o: $(SRC)/parsecfg.c $(SRC)/parsecfg.h $(SRC)/bioscons.h $(SRC)/matfs16.h ../common/libc/include/string.h | $(BUILD)
+$(BUILD)/parsecfg.o: $(SRC)/parsecfg.c $(SRC)/parsecfg.h $(SRC)/bioscons.h $(SRC)/kfiles.h $(SRC)/matfs16.h ../common/libc/include/string.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/parsecfg.c -o $@
 
 $(BUILD)/bioscons.o: $(SRC)/bioscons.c $(SRC)/bioscons.h | $(BUILD)

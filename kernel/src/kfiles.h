@@ -7,6 +7,7 @@
 #include "matfs16.h"
 
 #define KFILE_INVALID_FD 0xFF
+#define KFILES_MAX_DESCRIPTORS 32
 
 typedef struct file_desc_t {
 	uint16_t current_lba;
@@ -26,6 +27,10 @@ typedef struct file_desc_t {
 
 /* Allocate the global file descriptor table. Valid descriptors are 0-254. */
 void kfiles_init(uint16_t descriptor_count);
+
+/* Maximum descriptor count that fits the linked kernel heap, including the
+ * per-file-table scratch block allocated by kfiles_init(). */
+uint16_t kfiles_max_descriptors(void);
 
 /* Check whether a task owns any open descriptors. This scan does not wait on
  * the file lock, so it is safe while another suspended task may hold it. */
