@@ -160,6 +160,9 @@ parse_cmdline:
 	mov [drive_name], al
 
 .check_args:
+	; getenv returns a pointer in SI above, so restore the command-line pointer
+	; before selecting either the drive prefix or the wildcard pattern.
+	mov si, CMD_LINE
 
 	mov al, [CMD_LINE]
 	test al, al

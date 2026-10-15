@@ -1,4 +1,3 @@
-BITS 16
 ORG 0
 
 SYS_WRITE equ 1
