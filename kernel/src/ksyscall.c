@@ -114,6 +114,7 @@ static void k_syscall_sys_load(registers_t *regs) {
 	}
 	if(i == MATFS16_FILENAME_MAXLEN || filename[0] == '\0') return;
 
+	if(matfs16_cache_blockchain(drive_no) != MATFS16_OK) return;
 	status = matfs16_locate_file(filename, drive_no, &current_lba, &length);
 	if(status != MATFS16_OK) return;
 	if(length == MATFS16_FILE_SIZE_UNKNOWN) return;
@@ -168,6 +169,7 @@ static void k_syscall_sys_open(registers_t* regs) {
 	}
 	if(i == MATFS16_FILENAME_MAXLEN) return;
 
+	if(matfs16_cache_blockchain(drive_num) != MATFS16_OK) return;
 	fd = kfile_open(drive_num, filename);
 	if(fd == KFILE_INVALID_FD) return;
 
@@ -222,12 +224,22 @@ static void k_syscall_sys_delete(registers_t* regs) {
 }
 
 static void k_syscall_sys_close(registers_t* regs) {
+	uint8_t drive_num;
+	uint8_t fd;
+
 	if(regs->bx < 3 || regs->bx > (uint16_t)KFILE_INVALID_FD + 2) {
 		regs->ax = 1;
 		return;
 	}
 
-	regs->ax = kfile_close((uint8_t)(regs->bx - 3)) ? 0 : 1;
+	fd = (uint8_t)(regs->bx - 3);
+	if(!kfile_close(fd, &drive_num)) {
+		regs->ax = 1;
+		return;
+	}
+
+	matfs16_invalidate_blockchain_cache(drive_num);
+	regs->ax = matfs16_cache_blockchain(drive_num) == MATFS16_OK ? 0 : 1;
 }
 
 static void k_syscall_sys_write_block(registers_t* regs) {

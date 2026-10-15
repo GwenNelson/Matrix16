@@ -13,6 +13,9 @@
 
 extern uint8_t boot_drive_no;
 extern uint16_t bios_read_sector(uint16_t es, uint16_t bx, uint16_t cylinder, uint16_t head, uint16_t sector, uint16_t drive);
+extern uint16_t bios_read_sectors(uint16_t es, uint16_t bx, uint16_t cylinder,
+                                  uint16_t head, uint16_t sector,
+                                  uint16_t drive, uint16_t count);
 
 static void bios_putchar(char c) {
         uint16_t ax = 0x0e00 | (uint8_t)c;
@@ -163,14 +166,34 @@ static bool verify_super(matfs_superblock_t* super) {
 
 static bool load_contiguous_kernel(void) {
 	uint16_t block_count = super_buf.kernel_block_count;
-	uint16_t i;
+	uint16_t loaded = 0;
 
 	if(!contiguous_kernel) return false;
-	for(i = 0; i < block_count; i++) {
-		uint16_t offset = i * MAT16FS_BLOCKSIZE;
-		uint16_t lba = kernel_first_block + i;
+	while(loaded < block_count) {
+		uint16_t lba = kernel_first_block + loaded;
+		uint16_t offset = loaded * MAT16FS_BLOCKSIZE;
+		uint16_t count = block_count - loaded;
+		uint16_t track_remaining = 9 - (lba % 9);
+		uint16_t segment_remaining;
+		uint16_t cylinder;
+		uint16_t head;
+		uint16_t sector;
 
-		if(!read_lba_sector(SEG_KERN, offset, boot_drive_no, lba)) return false;
+		/* Keep each BIOS request inside one track and the kernel segment. */
+		if(count > track_remaining) count = track_remaining;
+		if(offset != 0) {
+			segment_remaining = (uint16_t)(0 - offset) / MAT16FS_BLOCKSIZE;
+			if(count > segment_remaining) count = segment_remaining;
+		}
+		if(count == 0) return false;
+
+		lba2chs(lba, &cylinder, &head, &sector);
+		if(bios_read_sectors(SEG_KERN, offset, cylinder, head, sector,
+		                     boot_drive_no, count) != 0) return false;
+
+		/* Show one progress dot for each sector confirmed by the BIOS call. */
+		for(uint16_t i = 0; i < count; i++) bios_putchar('.');
+		loaded += count;
 	}
 
 	return true;

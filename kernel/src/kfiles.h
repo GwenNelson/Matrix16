@@ -40,7 +40,7 @@ uint8_t kfile_create(uint8_t drive_num, const char* filename);
 bool kfile_delete(uint8_t drive_num, const char* filename);
 
 /* Close a global file descriptor, returning false if it is not open. */
-bool kfile_close(uint8_t fd);
+bool kfile_close(uint8_t fd, uint8_t *drive_num);
 
 /*
  * Read up to count bytes from a descriptor owned by the calling thread at the

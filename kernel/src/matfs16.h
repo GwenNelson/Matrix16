@@ -127,6 +127,24 @@ matfs16_status_t matfs16_load_block(
 	uint16_t buf
 );
 
+/* Load this drive's three blockchain sectors into the in-memory cache.
+ * Calling this again while the cache is valid does not reread the disk. */
+matfs16_status_t matfs16_cache_blockchain(uint8_t drive_no);
+
+/* Mark a drive's cache stale after external or direct on-disk changes. */
+void matfs16_invalidate_blockchain_cache(uint8_t drive_no);
+
+/* Read adjacent LBAs in one BIOS request. The range must stay within one
+ * track and the destination segment; this does not follow or validate a file
+ * chain, so chain callers must verify every link before using it. */
+matfs16_status_t matfs16_load_contiguous_blocks(
+	uint8_t drive_no,
+	uint16_t first_lba,
+	uint16_t block_count,
+	uint16_t seg,
+	uint16_t buf
+);
+
 /* Write exactly one 512-byte sector at absolute disk LBA lba from seg:buf. */
 matfs16_status_t matfs16_store_block(
 	uint8_t drive_no,

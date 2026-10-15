@@ -2,6 +2,7 @@ bits 16
 
 global switch_to
 global copy_initial_frame
+global copy_words_between_segments
 
 section .text
 
@@ -29,6 +30,39 @@ copy_initial_frame:
 	pop di
 	pop si
 	pop es
+	pop bp
+	ret
+
+; void copy_words_between_segments(uint16_t source_seg, uint16_t dest_seg,
+;                                  uint16_t word_count)
+; Copy from offset zero in one segment to offset zero in another. This can
+; copy a complete 64 KiB task image with word_count=0x8000.
+copy_words_between_segments:
+	push bp
+	mov bp, sp
+	push ds
+	push es
+	push si
+	push di
+	push cx
+	pushf
+
+	mov ax, [bp + 4]
+	mov ds, ax
+	mov ax, [bp + 6]
+	mov es, ax
+	xor si, si
+	xor di, di
+	mov cx, [bp + 8]
+	cld
+	rep movsw
+
+	popf
+	pop cx
+	pop di
+	pop si
+	pop es
+	pop ds
 	pop bp
 	ret
 

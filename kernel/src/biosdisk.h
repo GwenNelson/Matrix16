@@ -4,5 +4,8 @@
 
 uint16_t bios_read_sector(uint16_t es, uint16_t bx, uint16_t cylinder,
                           uint16_t head, uint16_t sector, uint16_t drive);
+uint16_t bios_read_sectors(uint16_t es, uint16_t bx, uint16_t cylinder,
+                           uint16_t head, uint16_t sector, uint16_t drive,
+                           uint16_t count);
 uint16_t bios_write_sector(uint16_t es, uint16_t bx, uint16_t cylinder,
                            uint16_t head, uint16_t sector, uint16_t drive);

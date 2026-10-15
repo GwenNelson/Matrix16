@@ -13,6 +13,7 @@
 #include "utils.h"
 #include "waitkey.h"
 #include "task.h"
+#include "mtsk16.h"
 #include "kheap.h"
 #include "kfiles.h"
 
@@ -118,6 +119,22 @@ static void skip_systemcfg_prompt(void) {
 kconsole_saved_state_t task_console_states[4]; // we only have 4 VCs max
 static bool task_console_state_valid[4];
 static uint16_t next_free_task_segment = SEG_USER0;
+static uint8_t startup_vram_buffer[MTSK16_VRAM_SIZE];
+
+typedef struct startup_loaded_task_t {
+	bool valid;
+	uint8_t drive_num;
+	uint8_t console;
+	uint16_t segment;
+	uint16_t resume_sp;
+	char filename[MATFS16_FILENAME_MAXLEN];
+} startup_loaded_task_t;
+
+static startup_loaded_task_t startup_loaded_tasks[4];
+static bool startup_blockchain_cache_attempted[2];
+
+extern void copy_words_between_segments(uint16_t source_seg, uint16_t dest_seg,
+	                                    uint16_t word_count);
 
 static uint16_t allocate_task_segment(void) {
 	uint16_t segment;
@@ -140,10 +157,83 @@ static void report_startup_error(char* message) {
 	bios_puts("\n");
 }
 
+static void ensure_startup_blockchain_cache(uint8_t drive_num) {
+	matfs16_status_t status;
+
+	if(drive_num > 1 || startup_blockchain_cache_attempted[drive_num]) return;
+	startup_blockchain_cache_attempted[drive_num] = true;
+	status = matfs16_cache_blockchain(drive_num);
+	if(status != MATFS16_OK) bios_puts("Warning: using uncached blockchain reads\n");
+}
+
+static startup_loaded_task_t* find_loaded_startup_task(const char* filename,
+	                                                    uint8_t drive_num) {
+	for(uint8_t i = 0; i < 4; i++) {
+		if(startup_loaded_tasks[i].valid &&
+		   startup_loaded_tasks[i].drive_num == drive_num &&
+		   strcmp(startup_loaded_tasks[i].filename, filename) == 0) {
+			return &startup_loaded_tasks[i];
+		}
+	}
+	return 0;
+}
+
+static void remember_loaded_startup_task(const char* filename, uint8_t drive_num,
+	                                     uint16_t segment, uint8_t console,
+	                                     uint16_t resume_sp, kthread_id_t thread_id) {
+	uint8_t slot = thread_id - KTHREAD_USER_TSK0_ID;
+	startup_loaded_task_t* loaded;
+
+	if(slot >= 4) return;
+	loaded = &startup_loaded_tasks[slot];
+	loaded->drive_num = drive_num;
+	loaded->console = console;
+	loaded->segment = segment;
+	loaded->resume_sp = resume_sp;
+	strcpy(loaded->filename, filename);
+	loaded->valid = true;
+}
+
+static bool copy_loaded_startup_task(const char* filename, uint8_t drive_num,
+	                                 uint16_t segment, kthread_id_t thread_id,
+	                                 uint8_t console) {
+	startup_loaded_task_t* source = find_loaded_startup_task(filename, drive_num);
+	uint8_t slot = thread_id - KTHREAD_USER_TSK0_ID;
+	uint16_t source_vram;
+	uint16_t dest_vram;
+	mtsk16_context_isr_v1_t __far *context;
+
+	if(source == 0 || slot >= 4) return false;
+	source_vram = kconsole_vram_segment(source->console);
+	dest_vram = kconsole_vram_segment(console);
+	if(source_vram == VRAM_SEG_INVALID || dest_vram == VRAM_SEG_INVALID) return false;
+
+	bios_puts("Copying task ");
+	bios_puts((char*)filename);
+	bios_puts(" from its loaded slot\n");
+	copy_words_between_segments(source->segment, segment, 0x8000);
+	copy_words_between_segments(source_vram, dest_vram,
+	                            MTSK16_VRAM_SIZE / sizeof(uint16_t));
+
+	context = (mtsk16_context_isr_v1_t __far *)mk_farptr(segment, source->resume_sp);
+	context->es = segment;
+	context->ds = segment;
+	context->cs = segment;
+
+	task_console_states[console] = task_console_states[source->console];
+	task_console_state_valid[console] = true;
+	kthread_setup_restored(thread_id, segment, source->resume_sp, console);
+	remember_loaded_startup_task(filename, drive_num, segment, console,
+	                             source->resume_sp, thread_id);
+	return true;
+}
+
 bool startup_task(const char* filename, uint8_t drive_num, uint16_t seg, kthread_id_t thread_id, uint8_t console) {
 	uint16_t task_lba;
 	uint16_t task_len;
 
+	if(copy_loaded_startup_task(filename, drive_num, seg, thread_id, console)) return true;
+	ensure_startup_blockchain_cache(drive_num);
 	if(matfs16_locate_file(filename,drive_num,&task_lba,&task_len) != MATFS16_OK) return false;
 
 	uint16_t vram_seg = kconsole_vram_segment(console);
@@ -152,13 +242,22 @@ bool startup_task(const char* filename, uint8_t drive_num, uint16_t seg, kthread
 	uint8_t scratch_buf[512];
 
 	task_buffers_t t_buffers = { .memory_segment = seg,
-				   .vram    = { .segment = vram_seg, .offset = 0x0000},
+				   .vram    = { .segment = SEG_KERN, .offset = (uint16_t)startup_vram_buffer},
 				   .scratch = { .segment = SEG_KERN, .offset = (uint16_t)&scratch_buf}};
 
 	task_state_t t_state;
+	bios_puts("Loading task ");
+	bios_puts((char*)filename);
+	bios_puts(drive_num == 0 ? " from A: " : " from B: ");
 	task_status_t status = task_restore(drive_num,task_lba,&t_buffers,&t_state);
+	bios_puts("\n");
 
 	if(status != TASK_OK) return false;
+
+	volatile uint16_t __far *vram =
+		(volatile uint16_t __far *)mk_farptr(vram_seg, 0);
+	uint16_t *saved_vram = (uint16_t*)startup_vram_buffer;
+	for(uint16_t i = 0; i < MTSK16_VRAM_SIZE / sizeof(uint16_t); i++) vram[i] = saved_vram[i];
 
 	// stash the console state, so we can restore it correctly after all tasks are loaded, before we actually start them up
 	task_console_states[console] = t_state.console;
@@ -166,6 +265,8 @@ bool startup_task(const char* filename, uint8_t drive_num, uint16_t seg, kthread
 
 	// setup the thread
 	kthread_setup_restored(thread_id,seg,t_state.resume_sp,console);
+	remember_loaded_startup_task(filename, drive_num, seg, console,
+	                             t_state.resume_sp, thread_id);
 	return true;
 }
 
@@ -272,6 +373,7 @@ void kernel_main(void) {
 	kthread_init();
 
 	do_start_delay();
+	ensure_startup_blockchain_cache(0);
 
 	startup_all_tasks();
 

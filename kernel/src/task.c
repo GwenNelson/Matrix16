@@ -1,6 +1,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "bioscons.h"
 #include "matfs16.h"
 #include "mtsk16.h"
 #include "task.h"
@@ -14,6 +15,10 @@
 #endif
 
 static const char task_magic[MTSK16_MAGIC_SIZE] = MTSK16_MAGIC;
+
+static void report_loaded_block(void) {
+	bios_putchar('.', cur_page_no);
+}
 
 static bool magic_matches(const mtsk16_header_t __far *header) {
 	for(uint16_t i = 0; i < MTSK16_MAGIC_SIZE; i++) {
@@ -76,11 +81,49 @@ static void copy_console_state(const mtsk16_console_state_v1_t __far *source, kc
 	for(uint16_t i = 0; i < source->input_length; i++) destination->input[i] = source->input[i];
 }
 
-static task_status_t next_required_block(uint8_t drive_no, uint16_t current_lba, uint16_t *next_lba) {
-	matfs16_status_t status = matfs16_next_block(drive_no, current_lba, next_lba);
+static task_status_t load_task_chain_blocks(uint8_t drive_no, uint16_t *previous_lba,
+	                                         uint16_t block_count, uint16_t segment,
+	                                         uint16_t offset) {
+	uint16_t loaded = 0;
+	uint16_t current_lba = *previous_lba;
 
-	if(status == MATFS16_END_OF_FILE) return TASK_ERR_TRUNCATED;
-	if(status != MATFS16_OK) return matfs_error(status);
+	while(loaded < block_count) {
+		uint16_t first_lba;
+		uint16_t last_lba;
+		uint16_t next_lba;
+		uint16_t run_count = 1;
+		uint16_t run_limit;
+		matfs16_status_t matfs_status;
+
+		matfs_status = matfs16_next_block(drive_no, current_lba, &first_lba);
+		if(matfs_status == MATFS16_END_OF_FILE) return TASK_ERR_TRUNCATED;
+		if(matfs_status != MATFS16_OK) return matfs_error(matfs_status);
+
+		last_lba = first_lba;
+		run_limit = block_count - loaded;
+		if(run_limit > 9 - (first_lba % 9)) run_limit = 9 - (first_lba % 9);
+
+		/* Only batch sectors whose chain entries explicitly point to the next LBA. */
+		while(run_count < run_limit) {
+			matfs_status = matfs16_next_block(drive_no, last_lba, &next_lba);
+			if(matfs_status == MATFS16_END_OF_FILE) return TASK_ERR_TRUNCATED;
+			if(matfs_status != MATFS16_OK) return matfs_error(matfs_status);
+			if(next_lba != last_lba + 1) break;
+			last_lba = next_lba;
+			run_count++;
+		}
+
+		matfs_status = matfs16_load_contiguous_blocks(drive_no, first_lba,
+		                                               run_count, segment, offset);
+		if(matfs_status != MATFS16_OK) return matfs_error(matfs_status);
+
+		for(uint16_t i = 0; i < run_count; i++) report_loaded_block();
+		loaded += run_count;
+		current_lba = last_lba;
+		offset += run_count * MATFS16_BLOCK_SIZE;
+	}
+
+	*previous_lba = current_lba;
 	return TASK_OK;
 }
 
@@ -102,6 +145,7 @@ task_status_t task_restore(uint8_t drive_no, uint16_t first_lba, const task_buff
 	matfs_status = matfs16_load_block(drive_no, first_lba,
 		buffers->scratch.segment, buffers->scratch.offset);
 	if(matfs_status != MATFS16_OK) return matfs_error(matfs_status);
+	report_loaded_block();
 
 	const mtsk16_header_t __far *header =
 		(const mtsk16_header_t __far *)mk_farptr(buffers->scratch.segment,
@@ -116,26 +160,13 @@ task_status_t task_restore(uint8_t drive_no, uint16_t first_lba, const task_buff
 	memory_encoding = header->memory_encoding;
 	current_lba = first_lba;
 
-	for(uint16_t block = 0; block < MTSK16_VRAM_BLOCKS; block++) {
-		status = next_required_block(drive_no, current_lba, &next_lba);
-		if(status != TASK_OK) return status;
+	status = load_task_chain_blocks(drive_no, &current_lba, MTSK16_VRAM_BLOCKS,
+	                                buffers->vram.segment, buffers->vram.offset);
+	if(status != TASK_OK) return status;
 
-		current_lba = next_lba;
-		matfs_status = matfs16_load_block(drive_no, current_lba,
-			buffers->vram.segment,
-			buffers->vram.offset + block * MATFS16_BLOCK_SIZE);
-		if(matfs_status != MATFS16_OK) return matfs_error(matfs_status);
-	}
-
-	for(uint16_t block = 0; block < MTSK16_MEMORY_BLOCKS; block++) {
-		status = next_required_block(drive_no, current_lba, &next_lba);
-		if(status != TASK_OK) return status;
-
-		current_lba = next_lba;
-		matfs_status = matfs16_load_block(drive_no, current_lba,
-			buffers->memory_segment, block * MATFS16_BLOCK_SIZE);
-		if(matfs_status != MATFS16_OK) return matfs_error(matfs_status);
-	}
+	status = load_task_chain_blocks(drive_no, &current_lba, MTSK16_MEMORY_BLOCKS,
+	                                buffers->memory_segment, 0);
+	if(status != TASK_OK) return status;
 
 	matfs_status = matfs16_next_block(drive_no, current_lba, &next_lba);
 	if(matfs_status == MATFS16_OK) return TASK_ERR_TRAILING_BLOCKS;

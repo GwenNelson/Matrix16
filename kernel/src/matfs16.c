@@ -11,6 +11,9 @@
 
 static volatile uint8_t bios_lock;
 
+static uint8_t blockchain_cache[2][MATFS16_BLOCKCHAIN_BLOCK_COUNT][MATFS16_BLOCK_SIZE];
+static uint8_t blockchain_cache_valid[2];
+
 static uint8_t matfs16_thread_scratch[KTHREAD_MAX_ID + 1][MATFS16_BLOCK_SIZE]
 	__attribute__((aligned(MATFS16_BLOCK_SIZE)));
 static uint8_t matfs16_bootstrap_scratch[MATFS16_BLOCK_SIZE]
@@ -381,15 +384,23 @@ static matfs16_status_t write_directory_entry_at(uint8_t drive_no, uint16_t inde
 static matfs16_status_t get_blockchain_entry(uint8_t drive_no, uint16_t relative_block,
 	                                           uint16_t* value) {
 	uint8_t* scratch_buf = get_scratch_buf();
-	uint16_t lba;
+	uint8_t* blockchain;
+	uint16_t blockchain_block;
 	matfs16_status_t status;
 
-	if(relative_block >= MATFS16_DATA_BLOCK_COUNT || value == NULL) return MATFS16_ERR_INVALID_ARGUMENT;
-	lba = MATFS16_BLOCKCHAIN_LBA + relative_block / MATFS16_BLOCKCHAIN_ENTRIES_PER_BLOCK;
-	status = matfs16_load_block(drive_no, lba, SEG_KERN, (uint16_t)scratch_buf);
-	if(status != MATFS16_OK) return status;
-	if(!verify_blockchain_block(scratch_buf)) return MATFS16_ERR_BAD_BLOCKCHAIN;
-	*value = read_u16(scratch_buf + blockchain_entry_offset(relative_block));
+	if(drive_no > 1 || relative_block >= MATFS16_DATA_BLOCK_COUNT || value == NULL) return MATFS16_ERR_INVALID_ARGUMENT;
+	blockchain_block = relative_block / MATFS16_BLOCKCHAIN_ENTRIES_PER_BLOCK;
+	if(blockchain_cache_valid[drive_no]) {
+		blockchain = blockchain_cache[drive_no][blockchain_block];
+	} else {
+		status = matfs16_load_block(drive_no, MATFS16_BLOCKCHAIN_LBA + blockchain_block,
+		                            SEG_KERN, (uint16_t)scratch_buf);
+		if(status != MATFS16_OK) return status;
+		if(!verify_blockchain_block(scratch_buf)) return MATFS16_ERR_BAD_BLOCKCHAIN;
+		blockchain = scratch_buf;
+	}
+
+	*value = read_u16(blockchain + blockchain_entry_offset(relative_block));
 	return MATFS16_OK;
 }
 
@@ -770,17 +781,62 @@ matfs16_status_t matfs16_locate_file(const char* filename, uint8_t drive_no, uin
 }
 
 matfs16_status_t matfs16_load_block(uint8_t drive_no, uint16_t lba, uint16_t seg, uint16_t buf) {
+	return matfs16_load_contiguous_blocks(drive_no, lba, 1, seg, buf);
+}
+
+matfs16_status_t matfs16_load_contiguous_blocks(uint8_t drive_no, uint16_t first_lba,
+	                                              uint16_t block_count, uint16_t seg,
+	                                              uint16_t buf) {
 	uint16_t c;
 	uint16_t h;
 	uint16_t s;
-	lba2chs(lba,&c,&h,&s);
+	uint16_t bios_error;
+	uint16_t bytes_available;
+
+	if(drive_no > 1 || block_count == 0 || first_lba >= MATFS16_BLOCK_COUNT ||
+	   block_count > MATFS16_BLOCK_COUNT - first_lba) return MATFS16_ERR_INVALID_ARGUMENT;
+	if(block_count > 9 - (first_lba % 9)) return MATFS16_ERR_INVALID_ARGUMENT;
+
+	/* Offset zero can address the whole segment; nonzero offsets have less room. */
+	if(buf != 0) {
+		bytes_available = (uint16_t)(0 - buf);
+		if(block_count > bytes_available / MATFS16_BLOCK_SIZE) return MATFS16_ERR_INVALID_ARGUMENT;
+	}
+
+	lba2chs(first_lba, &c, &h, &s);
 	acquire_bios_lock();
-	uint16_t bios_error = bios_read_sector(seg,buf,c,h,s,drive_no);
+	if(block_count == 1) {
+		bios_error = bios_read_sector(seg, buf, c, h, s, drive_no);
+	} else {
+		bios_error = bios_read_sectors(seg, buf, c, h, s, drive_no, block_count);
+	}
 	release_bios_lock();
 
 	if(bios_error != 0) return MATFS16_ERR_DISK;
-
 	return MATFS16_OK;
+}
+
+matfs16_status_t matfs16_cache_blockchain(uint8_t drive_no) {
+	uint16_t block;
+	matfs16_status_t status;
+
+	if(drive_no > 1) return MATFS16_ERR_INVALID_ARGUMENT;
+	if(blockchain_cache_valid[drive_no]) return MATFS16_OK;
+
+	for(block = 0; block < MATFS16_BLOCKCHAIN_BLOCK_COUNT; block++) {
+		uint8_t* destination = blockchain_cache[drive_no][block];
+		status = matfs16_load_block(drive_no, MATFS16_BLOCKCHAIN_LBA + block,
+		                            SEG_KERN, (uint16_t)destination);
+		if(status != MATFS16_OK) return status;
+		if(!verify_blockchain_block(destination)) return MATFS16_ERR_BAD_BLOCKCHAIN;
+	}
+
+	blockchain_cache_valid[drive_no] = 1;
+	return MATFS16_OK;
+}
+
+void matfs16_invalidate_blockchain_cache(uint8_t drive_no) {
+	if(drive_no <= 1) blockchain_cache_valid[drive_no] = 0;
 }
 
 matfs16_status_t matfs16_store_block(uint8_t drive_no, uint16_t lba, uint16_t seg, uint16_t buf) {
@@ -790,6 +846,10 @@ matfs16_status_t matfs16_store_block(uint8_t drive_no, uint16_t lba, uint16_t se
 	uint16_t bios_error;
 
 	if(drive_no > 1 || lba >= MATFS16_BLOCK_COUNT || buf > 0xFE00) return MATFS16_ERR_INVALID_ARGUMENT;
+	if(lba >= MATFS16_BLOCKCHAIN_LBA &&
+	   lba < MATFS16_BLOCKCHAIN_LBA + MATFS16_BLOCKCHAIN_BLOCK_COUNT) {
+		matfs16_invalidate_blockchain_cache(drive_no);
+	}
 
 	lba2chs(lba, &c, &h, &s);
 	acquire_bios_lock();
@@ -1015,32 +1075,18 @@ matfs16_status_t matfs16_write_file(uint8_t drive_no, const char* filename,
 }
 
 matfs16_status_t matfs16_next_block(uint8_t drive_no, uint16_t lba, uint16_t* next) {
-	uint8_t* scratch_buf;
 	matfs16_status_t status;
 	uint16_t relative_block;
-	uint16_t blockchain_block;
-	uint16_t entry_in_block;
-	uint16_t entry_offset;
 	uint16_t next_relative;
 
 	if(next == NULL) return MATFS16_ERR_INVALID_ARGUMENT;
 
 	if(lba < MATFS16_DATA_START_LBA || lba >= MATFS16_BLOCK_COUNT) return MATFS16_ERR_INVALID_ARGUMENT;
 
-	/* Convert the absolute LBA into a sector and entry in the blockchain. */
-	relative_block   = lba - MATFS16_DATA_START_LBA;
-	blockchain_block = relative_block / MATFS16_BLOCKCHAIN_ENTRIES_PER_BLOCK;
-	entry_in_block   = relative_block % MATFS16_BLOCKCHAIN_ENTRIES_PER_BLOCK;
-
-	scratch_buf = get_scratch_buf();
-	status = matfs16_load_block(drive_no, MATFS16_BLOCKCHAIN_LBA + blockchain_block, SEG_KERN, (uint16_t)scratch_buf);
-
+	/* Convert the absolute LBA to its relative entry and read it from cache. */
+	relative_block = lba - MATFS16_DATA_START_LBA;
+	status = get_blockchain_entry(drive_no, relative_block, &next_relative);
 	if(status != MATFS16_OK) return status;
-
-	if(!verify_blockchain_block(scratch_buf)) return MATFS16_ERR_BAD_BLOCKCHAIN;
-
-	entry_offset = 2 + entry_in_block * sizeof(uint16_t);
-	next_relative = read_u16(scratch_buf + entry_offset);
 
 	if(next_relative == MATFS16_CHAIN_END) return MATFS16_END_OF_FILE;
 

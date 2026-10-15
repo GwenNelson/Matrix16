@@ -175,7 +175,9 @@ bool kfile_delete(uint8_t drive_num, const char* filename) {
 	return status == MATFS16_OK;
 }
 
-bool kfile_close(uint8_t fd) {
+bool kfile_close(uint8_t fd, uint8_t *drive_num) {
+	if(drive_num == NULL) return false;
+
 	acquire_file_lock();
 
 	if(fd >= file_descriptor_count || !file_descriptors[fd].used) {
@@ -183,6 +185,7 @@ bool kfile_close(uint8_t fd) {
 		return false;
 	}
 
+	*drive_num = file_descriptors[fd].drive_num;
 	file_descriptors[fd].used = false;
 	release_file_lock();
 	return true;
