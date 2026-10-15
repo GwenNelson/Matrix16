@@ -66,7 +66,11 @@ static void k_syscall_sys_read(registers_t *regs) {
 		return;
 	}
 
-	while(kconsole_input_available(console) == 0) kthread_yield();
+	while(kconsole_input_available(console) == 0) {
+		kthread_yield();
+		if(kthread_is_pending_save_menu(kthread_cur_thread()))
+			kthread_handoff_save_menu(kthread_cur_thread());
+	}
 
 	while(read < regs->cx && kconsole_getc(console,&c)) {
 		buf[read] = c;
@@ -269,6 +273,7 @@ static void k_syscall_sys_read_block(registers_t* regs) {
 void k_syscall_callback(registers_t *regs) {
 	kthread_id_t thread = kthread_cur_thread();
 	if(thread < KTHREAD_USER_TSK0_ID || thread > KTHREAD_USER_RSV_ID) kpanic("Syscall from non-user thread!");
+	kthread_set_in_syscall(thread, true);
 
 	switch(regs->ax) {
 		case SYS_WRITE:
@@ -305,4 +310,7 @@ void k_syscall_callback(registers_t *regs) {
 			kpanic("Unknown syscall");
 		break;
 	}
+	kthread_set_in_syscall(thread, false);
+	if(kthread_is_pending_save_menu(thread))
+		kthread_handoff_save_menu(thread);
 }

@@ -13,4 +13,7 @@ typedef struct registers_t {
 	uint16_t dx;
 	uint16_t cx;
 	uint16_t ax;       // Bottom of pusha (lowest memory address)
+	uint16_t ip;       // CPU-pushed interrupt return frame
+	uint16_t cs;
+	uint16_t flags;
 } __attribute__((packed)) registers_t;

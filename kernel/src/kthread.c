@@ -4,6 +4,7 @@
 #include "kthread.h"
 #include "kmemmap.h"
 #include "kconsole.h"
+#include "savemenu.h"
 
 static kthread_t threads[7]; // statically allocated, because we're targeting a fracking 8086 with 512kb RAM
 
@@ -32,6 +33,21 @@ static void kidle_task(void) {
 
 static volatile bool    pending_console_switch = false;
 static volatile uint8_t pending_console_pagenum = 0;
+static volatile bool save_menu_active;
+static volatile bool save_menu_requested;
+static volatile kthread_id_t save_menu_target = KTHREAD_INVALID_ID;
+static volatile kthread_id_t save_menu_resume_target = KTHREAD_INVALID_ID;
+
+static void finish_save_menu(void) {
+	uint16_t irq_flags;
+	kthread_critical_enter(irq_flags);
+	if(save_menu_target <= KTHREAD_MAX_ID)
+		threads[save_menu_target].pending_save_menu = false;
+	save_menu_resume_target = save_menu_target;
+	save_menu_target = KTHREAD_INVALID_ID;
+	save_menu_active = false;
+	kthread_critical_exit(irq_flags);
+}
 
 static void kevent_task(void) {
 	for(;;) {
@@ -40,12 +56,20 @@ static void kevent_task(void) {
 		
 		bool need_switch = pending_console_switch;
 		uint8_t new_pagenum = pending_console_pagenum;
+		bool need_save_menu = save_menu_requested;
+		kthread_id_t save_target = save_menu_target;
 		
 		if(need_switch) pending_console_switch = false;
+		if(need_save_menu) save_menu_requested = false;
 		
 		kthread_critical_exit(irq_flags);
 
-		if(need_switch) {
+		if(need_save_menu && save_target <= KTHREAD_MAX_ID) {
+			savemenu_entry(save_target, threads[save_target].task_segment,
+			               threads[save_target].console);
+			finish_save_menu();
+			kthread_yield();
+		} else if(need_switch) {
 			kconsole_switchto(new_pagenum);
 		} else {
 			kthread_yield();
@@ -65,6 +89,63 @@ bool kthread_current_console(uint8_t *console) {
 	if(console == 0 || cur_thread > KTHREAD_MAX_ID) return false;
 	if(threads[cur_thread].console == KTHREAD_CONSOLE_NONE) return false;
 	*console = threads[cur_thread].console;
+	return true;
+}
+
+kthread_id_t kthread_from_console(uint8_t console) {
+	kthread_id_t id;
+
+	for(id = KTHREAD_USER_TSK0_ID; id <= KTHREAD_USER_TSK3_ID; id++) {
+		if(threads[id].state != KTHREAD_UNUSED && threads[id].console == console) return id;
+	}
+
+	return KTHREAD_INVALID_ID;
+}
+
+void kthread_set_pending_save_menu(kthread_id_t id, bool pending) {
+	if(id > KTHREAD_MAX_ID) return;
+	if(pending && save_menu_active) return;
+	threads[id].pending_save_menu = pending;
+}
+
+bool kthread_is_pending_save_menu(kthread_id_t id) {
+	if(id > KTHREAD_MAX_ID) return false;
+	return threads[id].pending_save_menu;
+}
+
+kthread_id_t kthread_pending_save_menu_target(void) {
+	for(kthread_id_t id = KTHREAD_USER_TSK0_ID; id <= KTHREAD_USER_TSK3_ID; id++) {
+		if(threads[id].pending_save_menu && !threads[id].in_syscall)
+			return id;
+	}
+	return KTHREAD_INVALID_ID;
+}
+
+void kthread_set_in_syscall(kthread_id_t id, bool in_syscall) {
+	if(id > KTHREAD_MAX_ID) return;
+	threads[id].in_syscall = in_syscall;
+}
+
+/* Queue the event thread to run the menu while this task remains suspended
+ * on its own stack. The scheduler gate keeps every user task paused until the
+ * event thread returns from savemenu_entry(). */
+bool kthread_handoff_save_menu(kthread_id_t id) {
+	uint16_t irq_flags;
+
+	if(id < KTHREAD_USER_TSK0_ID || id > KTHREAD_USER_TSK3_ID) return false;
+	if(!kthread_is_pending_save_menu(id)) return false;
+
+	kthread_critical_enter(irq_flags);
+	if(save_menu_active || !threads[id].pending_save_menu) {
+		kthread_critical_exit(irq_flags);
+		return false;
+	}
+	save_menu_target = id;
+	save_menu_requested = true;
+	save_menu_active = true;
+	kthread_critical_exit(irq_flags);
+
+	kthread_yield();
 	return true;
 }
 
@@ -132,7 +213,10 @@ int kthread_setup(kthread_id_t id, uint16_t seg, kthread_entry_t entry, uint16_t
 	threads[id].id    = id;
 	threads[id].ss    = seg;
 	threads[id].sp    = stack_top - 13 * sizeof(uint16_t);
+	threads[id].task_segment = seg;
 	threads[id].console = console;
+	threads[id].pending_save_menu = false;
+	threads[id].in_syscall = false;
 	threads[id].state = KTHREAD_READY;
 	started[id] = false;
 
@@ -148,7 +232,10 @@ int kthread_setup_restored(kthread_id_t id, uint16_t seg, uint16_t sp, uint8_t c
 	threads[id].id = id;
 	threads[id].ss = seg;
 	threads[id].sp = sp;
+	threads[id].task_segment = seg;
 	threads[id].console = console;
+	threads[id].pending_save_menu = false;
+	threads[id].in_syscall = false;
 	threads[id].state = KTHREAD_READY;
 	started[id] = false;
 	return 0;
@@ -197,7 +284,7 @@ void kthread_schedule(void) {
 	   threads[previous].state == KTHREAD_RUNNING)
 		threads[previous].state = KTHREAD_READY;
 
-	kthread_id_t candidate;
+	kthread_id_t candidate = KTHREAD_INVALID_ID;
 	kthread_id_t first;
 	if(previous == KTHREAD_INVALID_ID) {
 		first = KTHREAD_EVENT_ID;
@@ -207,17 +294,27 @@ void kthread_schedule(void) {
 			first = KTHREAD_EVENT_ID;
 	}
 
-	candidate = first;
-	for(uint8_t checked = 0; checked < KTHREAD_MAX_ID; checked++) {
-		if(threads[candidate].state == KTHREAD_READY)
-			break;
-		candidate++;
-		if(candidate > KTHREAD_MAX_ID)
-			candidate = KTHREAD_EVENT_ID;
+	/* When a menu closes, resume its task before rotating to another user. */
+	if(!save_menu_active && save_menu_resume_target <= KTHREAD_MAX_ID) {
+		if(threads[save_menu_resume_target].state == KTHREAD_READY)
+			candidate = save_menu_resume_target;
+		save_menu_resume_target = KTHREAD_INVALID_ID;
 	}
 
-	if(threads[candidate].state != KTHREAD_READY)
-		candidate = KTHREAD_IDLE_ID;
+	if(candidate == KTHREAD_INVALID_ID) {
+		candidate = first;
+		for(uint8_t checked = 0; checked < KTHREAD_MAX_ID; checked++) {
+			bool user_task = candidate >= KTHREAD_USER_TSK0_ID && candidate <= KTHREAD_USER_RSV_ID;
+			if(threads[candidate].state == KTHREAD_READY && (!save_menu_active || !user_task))
+				break;
+			candidate++;
+			if(candidate > KTHREAD_MAX_ID)
+				candidate = KTHREAD_EVENT_ID;
+		}
+		if(threads[candidate].state != KTHREAD_READY ||
+		   (save_menu_active && candidate >= KTHREAD_USER_TSK0_ID))
+			candidate = KTHREAD_IDLE_ID;
+	}
 
 	threads[candidate].state = KTHREAD_RUNNING;
 	if(candidate == previous) {

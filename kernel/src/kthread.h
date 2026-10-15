@@ -24,10 +24,13 @@ typedef enum kthread_state_t {
 typedef struct kthread_t {
     uint16_t ss;
     uint16_t sp;
+    uint16_t task_segment;
 
     kthread_state_t state;
     uint8_t id;
     uint8_t console;
+    volatile bool pending_save_menu;
+    volatile bool in_syscall;
 
 } kthread_t;
 
@@ -57,6 +60,12 @@ void kthread_yield(void);
 
 kthread_id_t kthread_cur_thread(void);
 bool kthread_current_console(uint8_t *console);
+kthread_id_t kthread_from_console(uint8_t console);
+void kthread_set_pending_save_menu(kthread_id_t id, bool pending);
+bool kthread_is_pending_save_menu(kthread_id_t id);
+bool kthread_handoff_save_menu(kthread_id_t id);
+kthread_id_t kthread_pending_save_menu_target(void);
+void kthread_set_in_syscall(kthread_id_t id, bool in_syscall);
 
 void kthread_block(kthread_id_t id);
 void kthread_wake(kthread_id_t id);

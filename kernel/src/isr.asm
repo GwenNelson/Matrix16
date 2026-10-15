@@ -179,7 +179,13 @@ isr08_wrapper:
 	mov ax, cs
 	mov ds, ax
 	mov es, ax
+	; Pass the saved frame so C can distinguish a user interruption from a
+	; timer tick that interrupted an existing kernel call chain.
+	mov ax, sp
+	add ax, 2
+	push ax
 	call k_timer_callback
+	add sp, 2
 	LEAVE_KERNEL
 
 isr09_wrapper:

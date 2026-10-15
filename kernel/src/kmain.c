@@ -16,11 +16,22 @@
 #include "mtsk16.h"
 #include "kheap.h"
 #include "kfiles.h"
+#include "8086.h"
 
 volatile uint16_t timer_ticks;
 
-void k_timer_callback(void) {
+static void save_menu_cb(uint8_t console_num) {
+	kthread_id_t thread = kthread_from_console(console_num);
+	if(thread < KTHREAD_USER_TSK0_ID || thread > KTHREAD_USER_TSK3_ID) return;
+	kthread_set_pending_save_menu(thread,true);
+}
+
+void k_timer_callback(registers_t *regs) {
 	timer_ticks++;
+	if(regs->cs != SEG_KERN) {
+		kthread_id_t target = kthread_pending_save_menu_target();
+		if(target != KTHREAD_INVALID_ID && kthread_handoff_save_menu(target)) return;
+	}
 	kthread_schedule();
 }
 
@@ -353,6 +364,8 @@ void startup_all_tasks(void) {
 	}
 }
 
+
+
 void kernel_main(void) {
 	bios_puts("Starting Matrix16...\n");
 
@@ -385,6 +398,7 @@ void kernel_main(void) {
 		}
 	}
 
+	kconsole_set_save_cb(save_menu_cb);
 	kthread_start();
 	kpanic("Something went wrong!");
 

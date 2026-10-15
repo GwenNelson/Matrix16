@@ -66,10 +66,13 @@ $(BUILD)/kconsole.o: $(SRC)/kconsole.c $(SRC)/kconsole.h | $(BUILD)
 $(BUILD)/kthread.o: $(SRC)/kthread.c $(SRC)/kthread.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/kthread.c -o $@
 
+$(BUILD)/savemenu.o: $(SRC)/savemenu.c $(SRC)/savemenu.h $(SRC)/kthread.h | $(BUILD)
+	$(CC) $(CFLAGS) -c $(SRC)/savemenu.c -o $@
+
 $(COMMON_LIBC): $(COMMON_LIBC_INPUTS)
 	$(MAKE) -C ../common/libc/
 
-$(BUILD)/kernel.elf: $(BUILD)/kentry.o $(BUILD)/isr.o $(BUILD)/switchto.o $(BUILD)/waitkey.o $(BUILD)/biosdisk.o $(BUILD)/kmain.o $(BUILD)/parsecfg.o $(BUILD)/bioscons.o $(BUILD)/kpanic.o $(BUILD)/kheap.o $(BUILD)/kfiles.o $(BUILD)/ksyscall.o $(BUILD)/utils.o $(BUILD)/matfs16.o $(BUILD)/task.o $(BUILD)/kconsole.o $(BUILD)/kthread.o $(COMMON_LIBC) $(SRC)/kernel.ld
+$(BUILD)/kernel.elf: $(BUILD)/kentry.o $(BUILD)/isr.o $(BUILD)/switchto.o $(BUILD)/waitkey.o $(BUILD)/biosdisk.o $(BUILD)/kmain.o $(BUILD)/parsecfg.o $(BUILD)/bioscons.o $(BUILD)/kpanic.o $(BUILD)/kheap.o $(BUILD)/kfiles.o $(BUILD)/ksyscall.o $(BUILD)/utils.o $(BUILD)/matfs16.o $(BUILD)/task.o $(BUILD)/kconsole.o $(BUILD)/kthread.o $(BUILD)/savemenu.o $(COMMON_LIBC) $(SRC)/kernel.ld
 	$(LD) $(LDFLAGS) -T $(SRC)/kernel.ld -o $@ $(filter-out $(SRC)/kernel.ld,$^)
 
 $(BUILD)/kernel.bin: $(BUILD)/kernel.elf

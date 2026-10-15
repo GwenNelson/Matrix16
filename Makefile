@@ -119,9 +119,14 @@ rootfs.img: boot/stage1/build/bootsector.bin boot/stage2/build/stage2.bin kernel
 		--file README.TXT=rootfs/README.TXT \
 		--file SYSTEM.CFG=rootfs/SYSTEM.CFG
 
+
 run: rootfs.img kernel
-	qemu-system-i386 -monitor stdio \
+	qemu-system-i386 \
+		-monitor vc \
+		-debugcon stdio \
+		-global isa-debugcon.iobase=0xe9 \
 		-drive file=rootfs.img,format=raw,if=floppy,index=0
+
 
 clean: stage1-clean stage2-clean kernel-clean fsgen-clean taskgen-clean common-libc-clean user-libc-clean shell-clean cmds-clean
 	rm -f user/build/SHELL.BIN user/build/HELLO.BIN rootfs/SHELL.TSK rootfs/HELLO.TSK rootfs.img
