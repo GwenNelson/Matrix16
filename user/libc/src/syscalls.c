@@ -119,6 +119,19 @@ uint16_t sys_copy(uint16_t source_handle, uint16_t destination_handle) {
 	return ax;
 }
 
+uint16_t sys_get_free_blocks(uint8_t drive_no) {
+	uint16_t ax = SYS_GET_FREE_BLOCKS;
+
+	__asm__ volatile (
+		"int $0x80"
+		: "+a" (ax)
+		: "b" ((uint16_t)drive_no)
+		: "memory", "cc"
+	);
+
+	return ax;
+}
+
 uint16_t sys_write_block(uint8_t drive_no, uint16_t lba, const void* buffer) {
 	uint16_t ax = SYS_WRITE_BLOCK;
 

@@ -11,15 +11,15 @@
 static kthread_t threads[7]; // statically allocated, because we're targeting a fracking 8086 with 512kb RAM
 
 #define KIDLE_STACK_LEN 512
-#define KEVENT_STACK_LEN 2048
-#define USER_KERNEL_STACK_LEN 2048
+#define KEVENT_STACK_LEN 1024
+#define USER_KERNEL_STACK_LEN 1024
 
 extern void switch_to(uint16_t ss, uint16_t sp, uint16_t *old_ss,
 	uint16_t *old_sp, uint16_t first_run); // ASM routine we use for switching
 extern void copy_initial_frame(uint16_t seg, uint16_t offset, const uint16_t *frame);
 
 static uint8_t kidle_stack[KIDLE_STACK_LEN]   __attribute__((aligned(2))); // 512 bytes ought to be enough for anyone...
-static uint8_t kevent_stack[KEVENT_STACK_LEN] __attribute__((aligned(2))); // need something a bit bigger for kevent thread
+static uint8_t kevent_stack[KEVENT_STACK_LEN] __attribute__((aligned(2)));
 
 //static uint8_t kuser_test_stack[4][USER_TEST_STACK_LEN] __attribute__((aligned(2)));
 static uint8_t user_kernel_stacks[4][USER_KERNEL_STACK_LEN] __attribute__((aligned(2)));

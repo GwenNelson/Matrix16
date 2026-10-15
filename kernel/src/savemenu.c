@@ -7,9 +7,10 @@
 #include "matfs16.h"
 #include "task.h"
 
+extern uint8_t kernel_vram_scratch[MTSK16_VRAM_SIZE];
+
 /* This is temporary handoff storage, separate from each task's saved state. */
 static kconsole_saved_state_t saved_console_state;
-static uint16_t saved_vram[MTSK16_VRAM_SIZE / sizeof(uint16_t)];
 static uint8_t saved_active_console;
 static uint8_t task_save_scratch[MATFS16_BLOCK_SIZE];
 static task_state_t task_save_state;
@@ -39,7 +40,7 @@ static bool save_task_console(uint8_t console) {
 	saved_active_console = kconsole_active_console();
 	vram = (volatile uint16_t __far *)mk_farptr(vram_segment, 0);
 	for(uint16_t i = 0; i < MTSK16_VRAM_SIZE / sizeof(uint16_t); i++)
-		saved_vram[i] = vram[i];
+		((uint16_t*)kernel_vram_scratch)[i] = vram[i];
 
 	restore_interrupts(flags);
 	return true;
@@ -52,7 +53,7 @@ static void restore_task_console(uint8_t console) {
 		(volatile uint16_t __far *)mk_farptr(vram_segment, 0);
 
 	for(uint16_t i = 0; i < MTSK16_VRAM_SIZE / sizeof(uint16_t); i++)
-		vram[i] = saved_vram[i];
+		vram[i] = ((uint16_t*)kernel_vram_scratch)[i];
 	(void)kconsole_restore_state(console, &saved_console_state);
 	restore_interrupts(flags);
 
@@ -80,7 +81,7 @@ void savemenu_savetask(kthread_id_t task_id, uint16_t task_segment, uint8_t cons
 
 	buffers.memory_segment = task_segment;
 	buffers.vram.segment = SEG_KERN;
-	buffers.vram.offset = (uint16_t)saved_vram;
+	buffers.vram.offset = (uint16_t)kernel_vram_scratch;
 	buffers.scratch.segment = SEG_KERN;
 	buffers.scratch.offset = (uint16_t)task_save_scratch;
 	task_save_state.resume_sp = task_save_resume_sp;

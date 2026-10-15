@@ -263,6 +263,47 @@ static void k_syscall_sys_copy(registers_t* regs) {
 	regs->ax = kfile_copy(source_fd, destination_fd) ? 0 : 1;
 }
 
+static void k_syscall_sys_rename(registers_t* regs) {
+	char __far* old_path = mk_farptr(regs->ds, regs->bx);
+	char __far* new_path = mk_farptr(regs->ds, regs->dx);
+	char old_name[MATFS16_FILENAME_MAXLEN];
+	char new_name[MATFS16_FILENAME_MAXLEN];
+	uint8_t drive_num;
+	uint16_t i;
+
+	regs->ax = 1;
+	if(old_path[0] == 'A') drive_num = 0;
+	else if(old_path[0] == 'B') drive_num = 1;
+	else return;
+	if(old_path[1] != ':' || new_path[0] != old_path[0] || new_path[1] != ':') return;
+
+	for(i = 0; i < MATFS16_FILENAME_MAXLEN; i++) {
+		old_name[i] = old_path[i + 2];
+		if(old_name[i] == '\0') break;
+	}
+	if(i == MATFS16_FILENAME_MAXLEN || old_name[0] == '\0') return;
+
+	for(i = 0; i < MATFS16_FILENAME_MAXLEN; i++) {
+		new_name[i] = new_path[i + 2];
+		if(new_name[i] == '\0') break;
+	}
+	if(i == MATFS16_FILENAME_MAXLEN || new_name[0] == '\0') return;
+
+	regs->ax = kfile_rename(drive_num, old_name, new_name) ? 0 : 1;
+}
+
+static void k_syscall_sys_get_free_blocks(registers_t* regs) {
+	matfs16_status_t status;
+	uint16_t count;
+
+	if(regs->bx > 1) {
+		regs->ax = 0xFFFF;
+		return;
+	}
+	status = matfs16_count_free_blocks((uint8_t)regs->bx, &count);
+	regs->ax = status == MATFS16_OK ? count : 0xFFFF;
+}
+
 static void k_syscall_sys_write_block(registers_t* regs) {
 	matfs16_status_t status;
 
@@ -319,6 +360,12 @@ void k_syscall_callback(registers_t *regs) {
 		break;
 		case SYS_COPY:
 			k_syscall_sys_copy(regs);
+		break;
+		case SYS_RENAME:
+			k_syscall_sys_rename(regs);
+		break;
+		case SYS_GET_FREE_BLOCKS:
+			k_syscall_sys_get_free_blocks(regs);
 		break;
 		case SYS_WRITE_BLOCK:
 			k_syscall_sys_write_block(regs);

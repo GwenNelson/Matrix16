@@ -45,6 +45,9 @@ uint8_t kfile_create(uint8_t drive_num, const char* filename);
 /* Delete a file only when no task currently has it open. */
 bool kfile_delete(uint8_t drive_num, const char* filename);
 
+/* Rename a file when neither the source nor destination is open. */
+bool kfile_rename(uint8_t drive_num, const char* old_name, const char* new_name);
+
 /* Close a global file descriptor, returning false if it is not open. */
 bool kfile_close(uint8_t fd, uint8_t *drive_num);
 

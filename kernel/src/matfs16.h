@@ -182,6 +182,12 @@ matfs16_status_t matfs16_write_file_block(
 /* Remove a file and release its data chain, unless system metadata references it. */
 matfs16_status_t matfs16_delete_file(uint8_t drive_no, const char *filename);
 
+/* Change a root-directory filename without moving its data blocks. */
+matfs16_status_t matfs16_rename_file(uint8_t drive_no, const char *old_name, const char *new_name);
+
+/* Count free data blocks from the validated in-memory blockchain cache. */
+matfs16_status_t matfs16_count_free_blocks(uint8_t drive_no, uint16_t *count);
+
 /* Append bytes at position (which must equal the current file length).
  * last_lba caches the current chain tail for repeated appends; pass zero for
  * an empty chain. The function updates it as blocks are successfully added. */

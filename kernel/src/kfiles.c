@@ -185,6 +185,27 @@ bool kfile_delete(uint8_t drive_num, const char* filename) {
 	return status == MATFS16_OK;
 }
 
+bool kfile_rename(uint8_t drive_num, const char* old_name, const char* new_name) {
+	uint16_t fd;
+	matfs16_status_t status;
+
+	if(drive_num > 1 || old_name == NULL || new_name == NULL) return false;
+	acquire_file_lock();
+	for(fd = 0; fd < file_descriptor_count; fd++) {
+		if(!file_descriptors[fd].used || file_descriptors[fd].drive_num != drive_num) continue;
+		if(file_descriptors[fd].directory ||
+		   strcmp(file_descriptors[fd].filename, old_name) == 0 ||
+		   strcmp(file_descriptors[fd].filename, new_name) == 0) {
+			release_file_lock();
+			return false;
+		}
+	}
+
+	status = matfs16_rename_file(drive_num, old_name, new_name);
+	release_file_lock();
+	return status == MATFS16_OK;
+}
+
 bool kfile_close(uint8_t fd, uint8_t *drive_num) {
 	if(drive_num == NULL) return false;
 

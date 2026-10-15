@@ -133,7 +133,8 @@ static void skip_systemcfg_prompt(void) {
 kconsole_saved_state_t task_console_states[4]; // we only have 4 VCs max
 static bool task_console_state_valid[4];
 static uint16_t next_free_task_segment = SEG_USER0;
-static uint8_t startup_vram_buffer[MTSK16_VRAM_SIZE];
+/* Startup task loading and the later save menu use this at separate times. */
+uint8_t kernel_vram_scratch[MTSK16_VRAM_SIZE];
 
 typedef struct startup_loaded_task_t {
 	bool valid;
@@ -256,7 +257,7 @@ bool startup_task(const char* filename, uint8_t drive_num, uint16_t seg, kthread
 	uint8_t scratch_buf[512];
 
 	task_buffers_t t_buffers = { .memory_segment = seg,
-				   .vram    = { .segment = SEG_KERN, .offset = (uint16_t)startup_vram_buffer},
+				   .vram    = { .segment = SEG_KERN, .offset = (uint16_t)kernel_vram_scratch},
 				   .scratch = { .segment = SEG_KERN, .offset = (uint16_t)&scratch_buf}};
 
 	task_state_t t_state;
@@ -270,7 +271,7 @@ bool startup_task(const char* filename, uint8_t drive_num, uint16_t seg, kthread
 
 	volatile uint16_t __far *vram =
 		(volatile uint16_t __far *)mk_farptr(vram_seg, 0);
-	uint16_t *saved_vram = (uint16_t*)startup_vram_buffer;
+	uint16_t *saved_vram = (uint16_t*)kernel_vram_scratch;
 	for(uint16_t i = 0; i < MTSK16_VRAM_SIZE / sizeof(uint16_t); i++) vram[i] = saved_vram[i];
 
 	// stash the console state, so we can restore it correctly after all tasks are loaded, before we actually start them up
