@@ -159,6 +159,26 @@ matfs16_status_t matfs16_store_block(
 /* Create an empty root-directory file. Existing names are left untouched. */
 matfs16_status_t matfs16_create_file(uint8_t drive_no, const char *filename);
 
+/* Replace filename with an empty, allocated chain of block_count sectors.
+ * logical_size may be MATFS16_FILE_SIZE_UNKNOWN when the exact length does
+ * not fit the directory's 16-bit size field. */
+matfs16_status_t matfs16_replace_file_blocks(
+	uint8_t drive_no,
+	const char *filename,
+	uint16_t block_count,
+	uint16_t logical_size,
+	uint16_t *first_lba
+);
+
+/* Write one complete sector in an already allocated file chain. */
+matfs16_status_t matfs16_write_file_block(
+	uint8_t drive_no,
+	uint16_t first_lba,
+	uint16_t block_index,
+	uint16_t seg,
+	uint16_t buf
+);
+
 /* Remove a file and release its data chain, unless system metadata references it. */
 matfs16_status_t matfs16_delete_file(uint8_t drive_no, const char *filename);
 

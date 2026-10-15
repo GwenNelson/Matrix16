@@ -20,6 +20,7 @@ typedef enum task_status_t {
 	TASK_ERR_UNSUPPORTED_ENCODING,
 	TASK_ERR_INVALID_CONTEXT,
 	TASK_ERR_BAD_COMPRESSION,
+	TASK_ERR_NO_SPACE,
 	TASK_ERR_NOT_IMPLEMENTED
 } task_status_t;
 
@@ -53,9 +54,9 @@ typedef struct task_state_t {
  */
 task_status_t task_restore(uint8_t drive_no, uint16_t first_lba, const task_buffers_t *buffers, task_state_t *state);
 
-/*
- * Reserved for saving a suspended user task into an already allocated MATFS16
- * chain. MATFS16 does not provide writes yet, so this returns
- * TASK_ERR_NOT_IMPLEMENTED.
- */
-task_status_t task_save(uint8_t drive_no, uint16_t first_lba, const task_buffers_t *buffers, const task_state_t *state);
+/* Save a suspended user task as a raw-memory TSK v1 file. The named file is
+ * replaced, and the task's user frame is copied from memory_segment:resume_sp.
+ * vram and scratch have the same size and segment constraints as task_restore. */
+task_status_t task_save(uint8_t drive_no, const char *filename,
+	                    const task_buffers_t *buffers,
+	                    const task_state_t *state);

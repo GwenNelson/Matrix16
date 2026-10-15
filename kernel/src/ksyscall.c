@@ -68,8 +68,10 @@ static void k_syscall_sys_read(registers_t *regs) {
 
 	while(kconsole_input_available(console) == 0) {
 		kthread_yield();
-		if(kthread_is_pending_save_menu(kthread_cur_thread()))
-			kthread_handoff_save_menu(kthread_cur_thread());
+		if(kthread_is_pending_save_menu(kthread_cur_thread())) {
+			regs->ax = 0;
+			return;
+		}
 	}
 
 	while(read < regs->cx && kconsole_getc(console,&c)) {
@@ -312,5 +314,5 @@ void k_syscall_callback(registers_t *regs) {
 	}
 	kthread_set_in_syscall(thread, false);
 	if(kthread_is_pending_save_menu(thread))
-		kthread_handoff_save_menu(thread);
+		kthread_handoff_save_menu(thread, (uint16_t *)regs);
 }

@@ -927,6 +927,93 @@ matfs16_status_t matfs16_create_file(uint8_t drive_no, const char* filename) {
 	return set_directory_entry_count(drive_no, root_lba, root_blocks, entry_count + 1);
 }
 
+static void release_allocated_chain(uint8_t drive_no, uint16_t first_lba,
+	                                uint16_t block_count) {
+	uint16_t current_lba = first_lba;
+
+	for(uint16_t i = 0; i < block_count; i++) {
+		uint16_t value;
+		if(get_blockchain_entry(drive_no, current_lba - MATFS16_DATA_START_LBA,
+		                        &value) != MATFS16_OK) return;
+		if(set_blockchain_entry(drive_no, current_lba - MATFS16_DATA_START_LBA,
+		                        MATFS16_CHAIN_FREE) != MATFS16_OK) return;
+		if(i + 1 < block_count) {
+			if(value >= MATFS16_DATA_BLOCK_COUNT) return;
+			current_lba = MATFS16_DATA_START_LBA + value;
+		}
+	}
+}
+
+matfs16_status_t matfs16_replace_file_blocks(uint8_t drive_no,
+	                                         const char* filename,
+	                                         uint16_t block_count,
+	                                         uint16_t logical_size,
+	                                         uint16_t* first_lba) {
+	matfs16_status_t status;
+	uint16_t allocated = 0;
+	uint16_t first = 0;
+	uint16_t previous = 0;
+
+	if(drive_no > 1 || filename == NULL || first_lba == NULL ||
+	   block_count == 0 || block_count > MATFS16_DATA_BLOCK_COUNT ||
+	   (logical_size != MATFS16_FILE_SIZE_UNKNOWN && logical_size == 0)) {
+		return MATFS16_ERR_INVALID_ARGUMENT;
+	}
+
+	status = matfs16_delete_file(drive_no, filename);
+	if(status != MATFS16_OK && status != MATFS16_ERR_NOT_FOUND) return status;
+	status = matfs16_create_file(drive_no, filename);
+	if(status != MATFS16_OK) return status;
+
+	while(allocated < block_count) {
+		uint16_t current;
+		status = allocate_data_block(drive_no, &current);
+		if(status != MATFS16_OK) {
+			if(allocated != 0) release_allocated_chain(drive_no, first, allocated);
+			return status;
+		}
+		if(allocated == 0) first = current;
+		else {
+			status = set_blockchain_entry(drive_no,
+				previous - MATFS16_DATA_START_LBA,
+				current - MATFS16_DATA_START_LBA);
+			if(status != MATFS16_OK) {
+				(void)set_blockchain_entry(drive_no,
+					current - MATFS16_DATA_START_LBA, MATFS16_CHAIN_FREE);
+				release_allocated_chain(drive_no, first, allocated);
+				return status;
+			}
+		}
+		previous = current;
+		allocated++;
+	}
+
+	status = update_file_entry(drive_no, filename, first, block_count, logical_size);
+	if(status != MATFS16_OK) {
+		release_allocated_chain(drive_no, first, block_count);
+		return status;
+	}
+	*first_lba = first;
+	return MATFS16_OK;
+}
+
+matfs16_status_t matfs16_write_file_block(uint8_t drive_no, uint16_t first_lba,
+	                                      uint16_t block_index, uint16_t seg,
+	                                      uint16_t buf) {
+	uint16_t current_lba = first_lba;
+	matfs16_status_t status;
+
+	if(drive_no > 1 || first_lba < MATFS16_DATA_START_LBA ||
+	   first_lba >= MATFS16_BLOCK_COUNT || block_index >= MATFS16_DATA_BLOCK_COUNT ||
+	   buf > 0xFE00) return MATFS16_ERR_INVALID_ARGUMENT;
+
+	for(uint16_t i = 0; i < block_index; i++) {
+		status = matfs16_next_block(drive_no, current_lba, &current_lba);
+		if(status != MATFS16_OK) return MATFS16_ERR_BAD_BLOCKCHAIN;
+	}
+	return matfs16_store_block(drive_no, current_lba, seg, buf);
+}
+
 matfs16_status_t matfs16_delete_file(uint8_t drive_no, const char* filename) {
 	matfs_directory_entry_t target;
 	matfs_directory_entry_t entry;

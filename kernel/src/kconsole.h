@@ -36,6 +36,7 @@ typedef struct kconsole_saved_state_t {
 /* Initialize pages before enabling keyboard input. Uses 80x25 color text mode. */
 void kconsole_init(uint8_t page_num);
 uint16_t kconsole_vram_segment(uint8_t page_num);
+uint8_t kconsole_active_console(void);
 void kconsole_set_save_cb(void (*callback)(uint8_t console_num));
 void kconsole_set_switch_cb(void (*callback)(uint8_t console_num));
 

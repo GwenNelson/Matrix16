@@ -64,6 +64,10 @@ uint16_t kconsole_vram_segment(uint8_t page_num) {
 	return page_segments[page_num];
 }
 
+uint8_t kconsole_active_console(void) {
+	return active_console;
+}
+
 static void update_cursor(uint8_t page_num) {
 	uint16_t ax = 0x0200;
 	uint16_t bx = (uint16_t)page_num << 8;

@@ -1,15 +1,17 @@
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "kthread.h"
 #include "kmemmap.h"
 #include "kconsole.h"
 #include "savemenu.h"
+#include "utils.h"
 
 static kthread_t threads[7]; // statically allocated, because we're targeting a fracking 8086 with 512kb RAM
 
 #define KIDLE_STACK_LEN 512
-#define KEVENT_STACK_LEN 1024
+#define KEVENT_STACK_LEN 2048
 #define USER_KERNEL_STACK_LEN 2048
 
 extern void switch_to(uint16_t ss, uint16_t sp, uint16_t *old_ss,
@@ -37,6 +39,7 @@ static volatile bool save_menu_active;
 static volatile bool save_menu_requested;
 static volatile kthread_id_t save_menu_target = KTHREAD_INVALID_ID;
 static volatile kthread_id_t save_menu_resume_target = KTHREAD_INVALID_ID;
+static volatile uint16_t save_menu_resume_sp;
 
 static void finish_save_menu(void) {
 	uint16_t irq_flags;
@@ -58,6 +61,7 @@ static void kevent_task(void) {
 		uint8_t new_pagenum = pending_console_pagenum;
 		bool need_save_menu = save_menu_requested;
 		kthread_id_t save_target = save_menu_target;
+		uint16_t resume_sp = save_menu_resume_sp;
 		
 		if(need_switch) pending_console_switch = false;
 		if(need_save_menu) save_menu_requested = false;
@@ -65,8 +69,8 @@ static void kevent_task(void) {
 		kthread_critical_exit(irq_flags);
 
 		if(need_save_menu && save_target <= KTHREAD_MAX_ID) {
-			savemenu_entry(save_target, threads[save_target].task_segment,
-			               threads[save_target].console);
+			savemenu_run(save_target, threads[save_target].task_segment,
+			             threads[save_target].console, resume_sp);
 			finish_save_menu();
 			kthread_yield();
 		} else if(need_switch) {
@@ -128,12 +132,31 @@ void kthread_set_in_syscall(kthread_id_t id, bool in_syscall) {
 
 /* Queue the event thread to run the menu while this task remains suspended
  * on its own stack. The scheduler gate keeps every user task paused until the
- * event thread returns from savemenu_entry(). */
-bool kthread_handoff_save_menu(kthread_id_t id) {
+ * event thread returns from savemenu_run(). */
+bool kthread_handoff_save_menu(kthread_id_t id, uint16_t *register_frame) {
 	uint16_t irq_flags;
+	uint16_t *bridge;
+	uint16_t user_frame_sp;
+	uint16_t user_ss;
+
+	if(register_frame == NULL) return false;
 
 	if(id < KTHREAD_USER_TSK0_ID || id > KTHREAD_USER_TSK3_ID) return false;
+	if(id != cur_thread || threads[id].in_syscall) return false;
 	if(!kthread_is_pending_save_menu(id)) return false;
+	if(register_frame[11] != threads[id].task_segment) return false;
+
+	/* ENTER_KERNEL placed the original user SS:SP immediately after this
+	 * 13-word frame. Copy the completed user context back before the event
+	 * thread can serialize the task's memory segment. */
+	bridge = register_frame + 13;
+	user_frame_sp = bridge[0];
+	user_ss = bridge[1];
+	if(user_ss != threads[id].task_segment || (user_frame_sp & 1) != 0 ||
+	   user_frame_sp > 0xFFE6) return false;
+
+	uint16_t __far *user_frame = (uint16_t __far *)mk_farptr(user_ss, user_frame_sp);
+	for(uint8_t i = 0; i < 13; i++) user_frame[i] = register_frame[i];
 
 	kthread_critical_enter(irq_flags);
 	if(save_menu_active || !threads[id].pending_save_menu) {
@@ -141,6 +164,7 @@ bool kthread_handoff_save_menu(kthread_id_t id) {
 		return false;
 	}
 	save_menu_target = id;
+	save_menu_resume_sp = user_frame_sp;
 	save_menu_requested = true;
 	save_menu_active = true;
 	kthread_critical_exit(irq_flags);
@@ -150,6 +174,9 @@ bool kthread_handoff_save_menu(kthread_id_t id) {
 }
 
 void kevent_kbd_cb(uint8_t page_num) {
+	/* The menu owns the visible page until it returns. Discard Ctrl-Alt-Fx
+	 * here rather than applying a delayed page switch after the menu closes. */
+	if(save_menu_active) return;
 	pending_console_switch  = true;
 	pending_console_pagenum = page_num;
 }

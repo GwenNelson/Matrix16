@@ -71,6 +71,14 @@ void kfiles_init(uint16_t descriptor_count) {
 	for(i = 0; i < file_descriptor_count; i++) file_descriptors[i].used = false;
 }
 
+bool task_has_open_files(kthread_id_t id) {
+	for(uint16_t fd = 0; fd < file_descriptor_count; fd++) {
+		if(file_descriptors[fd].used && file_descriptors[fd].owner == id)
+			return true;
+	}
+	return false;
+}
+
 uint8_t kfile_open(uint8_t drive_num, const char* filename) {
 	matfs16_status_t status;
 	uint16_t first_lba;
@@ -129,7 +137,6 @@ uint8_t kfile_create(uint8_t drive_num, const char* filename) {
 	acquire_file_lock();
 	for(fd = 0; fd < file_descriptor_count; fd++) {
 		if(file_descriptors[fd].used) continue;
-		file_descriptors[fd].used = true;
 		file_descriptors[fd].owner = kthread_cur_thread();
 		file_descriptors[fd].writable = true;
 		file_descriptors[fd].directory = false;
@@ -143,11 +150,12 @@ uint8_t kfile_create(uint8_t drive_num, const char* filename) {
 
 		status = matfs16_create_file(drive_num, filename);
 		if(status != MATFS16_OK) {
-			file_descriptors[fd].used = false;
 			release_file_lock();
 			return KFILE_INVALID_FD;
 		}
 
+		/* Publish the descriptor only after its owner and fields are ready. */
+		file_descriptors[fd].used = true;
 		release_file_lock();
 		return (uint8_t)fd;
 	}

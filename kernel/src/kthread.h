@@ -63,7 +63,7 @@ bool kthread_current_console(uint8_t *console);
 kthread_id_t kthread_from_console(uint8_t console);
 void kthread_set_pending_save_menu(kthread_id_t id, bool pending);
 bool kthread_is_pending_save_menu(kthread_id_t id);
-bool kthread_handoff_save_menu(kthread_id_t id);
+bool kthread_handoff_save_menu(kthread_id_t id, uint16_t *register_frame);
 kthread_id_t kthread_pending_save_menu_target(void);
 void kthread_set_in_syscall(kthread_id_t id, bool in_syscall);
 

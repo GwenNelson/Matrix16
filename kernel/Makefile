@@ -63,10 +63,10 @@ $(BUILD)/task.o: $(SRC)/task.c $(SRC)/task.h $(SRC)/mtsk16.h $(SRC)/matfs16.h $(
 $(BUILD)/kconsole.o: $(SRC)/kconsole.c $(SRC)/kconsole.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/kconsole.c -o $@
 
-$(BUILD)/kthread.o: $(SRC)/kthread.c $(SRC)/kthread.h | $(BUILD)
+$(BUILD)/kthread.o: $(SRC)/kthread.c $(SRC)/kthread.h $(SRC)/utils.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/kthread.c -o $@
 
-$(BUILD)/savemenu.o: $(SRC)/savemenu.c $(SRC)/savemenu.h $(SRC)/kthread.h | $(BUILD)
+$(BUILD)/savemenu.o: $(SRC)/savemenu.c $(SRC)/savemenu.h $(SRC)/kthread.h $(SRC)/kconsole.h $(SRC)/mtsk16.h $(SRC)/matfs16.h $(SRC)/task.h $(SRC)/kmemmap.h $(SRC)/kfiles.h $(SRC)/utils.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/savemenu.c -o $@
 
 $(COMMON_LIBC): $(COMMON_LIBC_INPUTS)

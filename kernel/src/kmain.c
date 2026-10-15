@@ -29,8 +29,11 @@ static void save_menu_cb(uint8_t console_num) {
 void k_timer_callback(registers_t *regs) {
 	timer_ticks++;
 	if(regs->cs != SEG_KERN) {
-		kthread_id_t target = kthread_pending_save_menu_target();
-		if(target != KTHREAD_INVALID_ID && kthread_handoff_save_menu(target)) return;
+		kthread_id_t current = kthread_cur_thread();
+		if(current >= KTHREAD_USER_TSK0_ID && current <= KTHREAD_USER_TSK3_ID &&
+		   kthread_is_pending_save_menu(current)) {
+			if(kthread_handoff_save_menu(current, (uint16_t *)regs)) return;
+		}
 	}
 	kthread_schedule();
 }

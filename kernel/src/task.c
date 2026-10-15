@@ -34,6 +34,7 @@ static bool magic_matches(const mtsk16_header_t __far *header) {
 static task_status_t matfs_error(matfs16_status_t status) {
 	if(status == MATFS16_ERR_DISK) return TASK_ERR_DISK;
 	if(status == MATFS16_ERR_BAD_BLOCKCHAIN) return TASK_ERR_BAD_BLOCKCHAIN;
+	if(status == MATFS16_ERR_NO_SPACE) return TASK_ERR_NO_SPACE;
 	return TASK_ERR_INVALID_ARGUMENT;
 }
 
@@ -225,10 +226,134 @@ task_status_t task_restore(uint8_t drive_no, uint16_t first_lba, const task_buff
 	return TASK_OK;
 }
 
-task_status_t task_save(uint8_t drive_no, uint16_t first_lba, const task_buffers_t *buffers, const task_state_t *state) {
-	(void)drive_no;
-	(void)first_lba;
-	(void)buffers;
-	(void)state;
-	return TASK_ERR_NOT_IMPLEMENTED;
+task_status_t task_save(uint8_t drive_no, const char *filename,
+	                    const task_buffers_t *buffers,
+	                    const task_state_t *state) {
+	matfs16_status_t matfs_status;
+	task_status_t status = TASK_OK;
+	uint16_t first_lba;
+	uint16_t memory_segment_words[3];
+	mtsk16_context_isr_v1_t __far *context;
+	mtsk16_header_t __far *header;
+	uint8_t __far *scratch;
+	uint16_t block_index;
+	uint16_t offset;
+
+	if(filename == 0 || buffers == 0 || state == 0 || drive_no > 1) return TASK_ERR_INVALID_ARGUMENT;
+	if(buffers->memory_segment == SEG_KERN || buffers->scratch.offset > 0xFE00 ||
+	   buffers->vram.offset > 0xF000) return TASK_ERR_INVALID_ARGUMENT;
+	if((state->resume_sp & 1) != 0 || state->resume_sp > MTSK16_MAX_RESUME_SP) return TASK_ERR_INVALID_CONTEXT;
+	if(state->screen_mode != MTSK16_SCREEN_TEXT_80X25_COLOR ||
+	   state->vram_size != MTSK16_VRAM_SIZE) return TASK_ERR_INVALID_ARGUMENT;
+	if(state->console.row >= TASK_SCREEN_ROWS || state->console.col >= TASK_SCREEN_COLS ||
+	   state->console.saved_row >= TASK_SCREEN_ROWS || state->console.saved_col >= TASK_SCREEN_COLS ||
+	   state->console.input_length > MTSK16_CONSOLE_INPUT_SIZE ||
+	   state->console.wrap > 1 || state->console.caps_lock > 1 ||
+	   state->console.num_lock > 1 || state->console.ansi_state > 3 ||
+	   state->console.param_index >= MTSK16_CONSOLE_ANSI_PARAMS) return TASK_ERR_BAD_HEADER;
+	for(uint8_t i = 0; i < MTSK16_CONSOLE_ANSI_PARAMS; i++)
+		if(state->console.params[i] > 999) return TASK_ERR_BAD_HEADER;
+
+	context = (mtsk16_context_isr_v1_t __far *)mk_farptr(
+		buffers->memory_segment, state->resume_sp);
+	memory_segment_words[0] = context->es;
+	memory_segment_words[1] = context->ds;
+	memory_segment_words[2] = context->cs;
+
+	/* TSK v1 stores relocatable segment words as zero. Restore the live frame
+	 * before returning, including when a disk operation fails. */
+	context->es = 0;
+	context->ds = 0;
+	context->cs = 0;
+
+	/* A raw TSK is exactly 137 sectors, whose full byte length is represented
+	 * by the directory's unknown-size marker. */
+	matfs_status = matfs16_replace_file_blocks(drive_no, filename,
+		MTSK16_TOTAL_BLOCKS, MATFS16_FILE_SIZE_UNKNOWN, &first_lba);
+	if(matfs_status != MATFS16_OK) {
+		status = matfs_error(matfs_status);
+		goto restore_frame;
+	}
+	matfs_status = matfs16_cache_blockchain(drive_no);
+	if(matfs_status != MATFS16_OK) {
+		status = matfs_error(matfs_status);
+		goto restore_frame;
+	}
+
+	scratch = (uint8_t __far *)mk_farptr(buffers->scratch.segment,
+	                                    buffers->scratch.offset);
+	for(offset = 0; offset < MATFS16_BLOCK_SIZE; offset++) scratch[offset] = 0;
+	header = (mtsk16_header_t __far *)scratch;
+
+	header->magic[0] = 'M';
+	header->magic[1] = 'T';
+	header->magic[2] = 'S';
+	header->magic[3] = 'K';
+	header->magic[4] = '1';
+	header->magic[5] = '6';
+	header->version = MTSK16_FORMAT_VERSION;
+	header->header_size = MTSK16_HEADER_SIZE;
+	header->flags = MTSK16_FLAG_RELOCATABLE_SEGMENTS;
+	header->context_format = MTSK16_CONTEXT_ISR_V1;
+	header->memory_encoding = MTSK16_MEMORY_RAW;
+	header->screen_mode = state->screen_mode;
+	header->vram_size = state->vram_size;
+	header->vram_first_block = MTSK16_VRAM_FIRST_BLOCK;
+	header->vram_block_count = MTSK16_VRAM_BLOCKS;
+	header->memory_first_block = MTSK16_MEMORY_FIRST_BLOCK;
+	header->memory_stored_blocks = MTSK16_MEMORY_BLOCKS;
+	header->memory_last_block_bytes = MTSK16_MEMORY_LAST_BLOCK_BYTES;
+	header->memory_decoded_blocks = MTSK16_MEMORY_BLOCKS;
+	header->resume_sp = state->resume_sp;
+	header->console_state_format = MTSK16_CONSOLE_STATE_V1;
+	header->console_state_size = sizeof(mtsk16_console_state_v1_t);
+	header->console.row = state->console.row;
+	header->console.col = state->console.col;
+	header->console.saved_row = state->console.saved_row;
+	header->console.saved_col = state->console.saved_col;
+	header->console.attribute = state->console.attribute;
+	header->console.wrap = state->console.wrap;
+	header->console.caps_lock = state->console.caps_lock;
+	header->console.num_lock = state->console.num_lock;
+	header->console.ansi_state = state->console.ansi_state;
+	header->console.param_index = state->console.param_index;
+	for(uint8_t i = 0; i < MTSK16_CONSOLE_ANSI_PARAMS; i++)
+		header->console.params[i] = state->console.params[i];
+	header->console.input_length = state->console.input_length;
+	for(uint16_t i = 0; i < MTSK16_CONSOLE_INPUT_SIZE; i++)
+		header->console.input[i] = i < state->console.input_length ? state->console.input[i] : 0;
+
+	matfs_status = matfs16_write_file_block(drive_no, first_lba, 0,
+		buffers->scratch.segment, buffers->scratch.offset);
+	if(matfs_status != MATFS16_OK) {
+		status = matfs_error(matfs_status);
+		goto restore_frame;
+	}
+
+	for(block_index = 0; block_index < MTSK16_VRAM_BLOCKS; block_index++) {
+		matfs_status = matfs16_write_file_block(drive_no, first_lba,
+			MTSK16_VRAM_FIRST_BLOCK + block_index, buffers->vram.segment,
+			buffers->vram.offset + block_index * MATFS16_BLOCK_SIZE);
+		if(matfs_status != MATFS16_OK) {
+			status = matfs_error(matfs_status);
+			goto restore_frame;
+		}
+	}
+
+	for(block_index = 0; block_index < MTSK16_MEMORY_BLOCKS; block_index++) {
+		offset = block_index * MATFS16_BLOCK_SIZE;
+		matfs_status = matfs16_write_file_block(drive_no, first_lba,
+			MTSK16_MEMORY_FIRST_BLOCK + block_index, buffers->memory_segment,
+			offset);
+		if(matfs_status != MATFS16_OK) {
+			status = matfs_error(matfs_status);
+			goto restore_frame;
+		}
+	}
+
+restore_frame:
+	context->es = memory_segment_words[0];
+	context->ds = memory_segment_words[1];
+	context->cs = memory_segment_words[2];
+	return status;
 }

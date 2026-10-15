@@ -15,15 +15,19 @@ typedef struct file_desc_t {
 	uint16_t block_offset;
 	uint16_t blocks_remaining;
 	uint8_t drive_num;
-	kthread_id_t owner;
+	volatile kthread_id_t owner;
 	char filename[MATFS16_FILENAME_MAXLEN];
 	bool directory;
 	bool writable;
-	bool used;
+	volatile bool used;
 } file_desc_t;
 
 /* Allocate the global file descriptor table. Valid descriptors are 0-254. */
 void kfiles_init(uint16_t descriptor_count);
+
+/* Check whether a task owns any open descriptors. This scan does not wait on
+ * the file lock, so it is safe while another suspended task may hold it. */
+bool task_has_open_files(kthread_id_t id);
 
 /*
  * Open a file at offset zero, or return KFILE_INVALID_FD on error. An empty
