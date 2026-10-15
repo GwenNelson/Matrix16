@@ -122,8 +122,8 @@ rootfs.img: boot/stage1/build/bootsector.bin boot/stage2/build/stage2.bin kernel
 		--stage2 boot/stage2/build/stage2.bin \
 		--kernel kernel/build/kernel.bin \
 		--task0 HELLO.TSK=rootfs/HELLO.TSK \
+		--task1 BASIC.TSK=user/basic/build/BASIC.TSK \
 		--file SHELL.TSK=rootfs/SHELL.TSK \
-		--file BASIC.TSK=user/basic/build/BASIC.TSK \
 		--file CLS.CMD=user/cmd/build/CLS.CMD \
 		--file TYPE.CMD=user/cmd/build/TYPE.CMD \
 		--file DIR.CMD=user/cmd/build/DIR.CMD \
