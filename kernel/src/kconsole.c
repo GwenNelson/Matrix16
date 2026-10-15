@@ -1,4 +1,6 @@
 #include "kconsole.h"
+#include "kmemmap.h"
+#include "utils.h"
 
 #define CONSOLE_COUNT 4
 #define ROWS 25
@@ -27,10 +29,16 @@ typedef struct console_state_t {
 	volatile char input[KCONSOLE_INPUT_SIZE];
 } console_state_t;
 
-static console_state_t consoles[CONSOLE_COUNT];
+static console_state_t consoles[CONSOLE_COUNT] SEG_SYS_BSS;
 static uint8_t active_console;
 static void (*kb_save_cb)(uint8_t console_num);
 static void (*kb_switch_cb)(uint8_t console_num);
+
+/* Console state lives in SEG_SYS; ordinary kernel data accesses use DS=SEG_KERN. */
+static console_state_t __far *console_state(uint8_t page_num) {
+	uint16_t offset = (uint16_t)consoles + (uint16_t)page_num * sizeof(console_state_t);
+	return (console_state_t __far *)mk_farptr(SEG_SYS, offset);
+}
 
 /* Modifiers describe the physical keyboard, locks belong to each console. */
 static struct {
@@ -71,7 +79,8 @@ uint8_t kconsole_active_console(void) {
 static void update_cursor(uint8_t page_num) {
 	uint16_t ax = 0x0200;
 	uint16_t bx = (uint16_t)page_num << 8;
-	uint16_t dx = ((uint16_t)consoles[page_num].row << 8) | consoles[page_num].col;
+	console_state_t __far *console = console_state(page_num);
+	uint16_t dx = ((uint16_t)console->row << 8) | console->col;
 	__asm__ volatile ("int $0x10" : "+a" (ax), "+b" (bx), "+d" (dx) : : "cc", "memory");
 }
 
@@ -103,7 +112,7 @@ static void update_leds(void) {
 }
 
 static void select_led_state(void) {
-	console_state_t *console = &consoles[active_console];
+	console_state_t __far *console = console_state(active_console);
 	keyboard.led_mask = 0;
 	if(console->caps_lock)
 		keyboard.led_mask |= 4;
@@ -113,13 +122,13 @@ static void select_led_state(void) {
 
 static void clear_cells(uint8_t page_num, uint16_t first, uint16_t end) {
 	volatile uint16_t __far *screen = page_memory(page_num);
-	uint16_t blank = ((uint16_t)consoles[page_num].attribute << 8) | ' ';
+	uint16_t blank = ((uint16_t)console_state(page_num)->attribute << 8) | ' ';
 	for(uint16_t i = first; i < end; i++)
 		screen[i] = blank;
 }
 
 static void linefeed(uint8_t page_num) {
-	console_state_t *console = &consoles[page_num];
+	console_state_t __far *console = console_state(page_num);
 	uint8_t row = console->row;
 	if(row < ROWS - 1) {
 		row++;
@@ -135,7 +144,7 @@ static void linefeed(uint8_t page_num) {
 void kconsole_init(uint8_t page_num) {
 	if(page_num >= CONSOLE_COUNT)
 		return;
-	console_state_t *console = &consoles[page_num];
+	console_state_t __far *console = console_state(page_num);
 	console->row = 0;
 	console->col = 0;
 	console->saved_row = 0;
@@ -179,7 +188,7 @@ void kconsole_switchto(uint8_t page_num) {
 void kconsole_move_cursor(uint8_t page_num, uint8_t row, uint8_t col) {
 	if(page_num >= CONSOLE_COUNT)
 		return;
-	console_state_t *console = &consoles[page_num];
+	console_state_t __far *console = console_state(page_num);
 	console->row = row < ROWS ? row : ROWS - 1;
 	console->col = col < COLS ? col : COLS - 1;
 	console->wrap = false;
@@ -193,7 +202,7 @@ static uint8_t ansi_color(uint8_t color) {
 }
 
 static void ansi_command(uint8_t page_num, char command) {
-	console_state_t *console = &consoles[page_num];
+	console_state_t __far *console = console_state(page_num);
 	uint16_t row = console->row;
 	uint16_t col = console->col;
 	uint16_t position = row * COLS + col;
@@ -231,7 +240,7 @@ static void ansi_command(uint8_t page_num, char command) {
 void kconsole_putc(uint8_t page_num, char c) {
 	if(page_num >= CONSOLE_COUNT)
 		return;
-	console_state_t *console = &consoles[page_num];
+	console_state_t __far *console = console_state(page_num);
 	uint8_t byte = (uint8_t)c;
 	if(console->ansi_state > 2) console->ansi_state = 0;
 	if(byte == 0x1b) {
@@ -301,10 +310,10 @@ void kconsole_puts(uint8_t page_num, char *string) {
 		kconsole_putc(page_num, *string++);
 }
 
-bool kconsole_save_state(uint8_t page_num, kconsole_saved_state_t *state) {
+bool kconsole_save_state(uint8_t page_num, kconsole_saved_state_t __far *state) {
 	if(page_num >= CONSOLE_COUNT || state == 0) return false;
 
-	console_state_t *console = &consoles[page_num];
+	console_state_t __far *console = console_state(page_num);
 	uint16_t tail = console->input_tail;
 	uint16_t input_length = (uint16_t)(console->input_head - tail);
 	if(input_length > KCONSOLE_INPUT_SIZE) return false;
@@ -326,7 +335,7 @@ bool kconsole_save_state(uint8_t page_num, kconsole_saved_state_t *state) {
 	return true;
 }
 
-bool kconsole_restore_state(uint8_t page_num, const kconsole_saved_state_t *state) {
+bool kconsole_restore_state(uint8_t page_num, const kconsole_saved_state_t __far *state) {
 	if(page_num >= CONSOLE_COUNT || state == 0) return false;
 	if(state->row >= ROWS || state->col >= COLS) return false;
 	if(state->saved_row >= ROWS || state->saved_col >= COLS) return false;
@@ -337,7 +346,7 @@ bool kconsole_restore_state(uint8_t page_num, const kconsole_saved_state_t *stat
 		if(state->params[i] > 999) return false;
 	}
 
-	console_state_t *console = &consoles[page_num];
+	console_state_t __far *console = console_state(page_num);
 	console->row = state->row;
 	console->col = state->col;
 	console->saved_row = state->saved_row;
@@ -364,7 +373,7 @@ bool kconsole_restore_state(uint8_t page_num, const kconsole_saved_state_t *stat
 /* One IRQ producer and one foreground consumer. Publish the head only once
  * the whole sequence is stored. The counters permit all 256 bytes to be used. */
 static void enqueue(const char *bytes, uint8_t length) {
-	console_state_t *console = &consoles[active_console];
+	console_state_t __far *console = console_state(active_console);
 	uint16_t head = console->input_head;
 	uint16_t used = (uint16_t)(head - console->input_tail);
 	if(length > KCONSOLE_INPUT_SIZE - used)
@@ -377,14 +386,14 @@ static void enqueue(const char *bytes, uint8_t length) {
 uint16_t kconsole_input_available(uint8_t page_num) {
 	if(page_num >= CONSOLE_COUNT) return 0;
 
-	console_state_t *console = &consoles[page_num];
+	console_state_t __far *console = console_state(page_num);
 	return (uint16_t)(console->input_head - console->input_tail);
 }
 
 bool kconsole_getc(uint8_t page_num, char *out) {
 	if(page_num >= CONSOLE_COUNT || out == 0)
 		return false;
-	console_state_t *console = &consoles[page_num];
+	console_state_t __far *console = console_state(page_num);
 	uint16_t tail = console->input_tail;
 	if(tail == console->input_head)
 		return false;
@@ -478,7 +487,7 @@ void kconsole_kb_callback(uint8_t scancode) {
 	bool released = (scancode & 0x80) != 0;
 	uint8_t code = scancode & 0x7f;
 	uint8_t bit = extended ? 2 : 1;
-	console_state_t *console = &consoles[active_console];
+	console_state_t __far *console = console_state(active_console);
 
 	if(code == 0x1d || code == 0x38) {
 		uint8_t *modifier = code == 0x1d ? &keyboard.ctrl : &keyboard.alt;

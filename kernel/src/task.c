@@ -78,7 +78,8 @@ static task_status_t validate_header(const mtsk16_header_t __far *header) {
 	return TASK_OK;
 }
 
-static void copy_console_state(const mtsk16_console_state_v1_t __far *source, kconsole_saved_state_t *destination) {
+static void copy_console_state(const mtsk16_console_state_v1_t __far *source,
+	                           kconsole_saved_state_t __far *destination) {
 	destination->row = source->row;
 	destination->col = source->col;
 	destination->saved_row = source->saved_row;
@@ -140,7 +141,9 @@ static task_status_t load_task_chain_blocks(uint8_t drive_no, uint16_t *previous
 	return TASK_OK;
 }
 
-task_status_t task_restore(uint8_t drive_no, uint16_t first_lba, const task_buffers_t *buffers, task_state_t *state) {
+task_status_t task_restore(uint8_t drive_no, uint16_t first_lba,
+	                       const task_buffers_t *buffers,
+	                       task_state_t __far *state) {
 	matfs16_status_t matfs_status;
 	task_status_t status;
 	uint16_t current_lba;
@@ -228,7 +231,7 @@ task_status_t task_restore(uint8_t drive_no, uint16_t first_lba, const task_buff
 
 task_status_t task_save(uint8_t drive_no, const char *filename,
 	                    const task_buffers_t *buffers,
-	                    const task_state_t *state) {
+	                    const task_state_t __far *state) {
 	matfs16_status_t matfs_status;
 	task_status_t status = TASK_OK;
 	uint16_t first_lba;

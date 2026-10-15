@@ -10,11 +10,40 @@
 extern uint8_t kernel_vram_scratch[MTSK16_VRAM_SIZE];
 
 /* This is temporary handoff storage, separate from each task's saved state. */
-static kconsole_saved_state_t saved_console_state;
+static kconsole_saved_state_t saved_console_state SEG_SYS_BSS;
 static uint8_t saved_active_console;
 static uint8_t task_save_scratch[MATFS16_BLOCK_SIZE];
-static task_state_t task_save_state;
+static task_state_t task_save_state SEG_SYS_BSS;
 static uint16_t task_save_resume_sp;
+
+static kconsole_saved_state_t __far *saved_console_state_ptr(void) {
+	return (kconsole_saved_state_t __far *)mk_farptr(SEG_SYS,
+	                                               (uint16_t)&saved_console_state);
+}
+
+static task_state_t __far *task_save_state_ptr(void) {
+	return (task_state_t __far *)mk_farptr(SEG_SYS,
+	                                    (uint16_t)&task_save_state);
+}
+
+static void copy_saved_console_state(kconsole_saved_state_t __far *destination,
+	                                 const kconsole_saved_state_t __far *source) {
+	destination->row = source->row;
+	destination->col = source->col;
+	destination->saved_row = source->saved_row;
+	destination->saved_col = source->saved_col;
+	destination->attribute = source->attribute;
+	destination->wrap = source->wrap;
+	destination->caps_lock = source->caps_lock;
+	destination->num_lock = source->num_lock;
+	destination->ansi_state = source->ansi_state;
+	destination->param_index = source->param_index;
+	for(uint8_t i = 0; i < KCONSOLE_ANSI_PARAMS; i++)
+		destination->params[i] = source->params[i];
+	destination->input_length = source->input_length;
+	for(uint16_t i = 0; i < KCONSOLE_INPUT_SIZE; i++)
+		destination->input[i] = source->input[i];
+}
 
 static uint16_t disable_interrupts(void) {
 	uint16_t flags;
@@ -33,7 +62,7 @@ static bool save_task_console(uint8_t console) {
 	uint16_t __far *scratch;
 
 	if(vram_segment == VRAM_SEG_INVALID ||
-	   !kconsole_save_state(console, &saved_console_state)) {
+	   !kconsole_save_state(console, saved_console_state_ptr())) {
 		restore_interrupts(flags);
 		return false;
 	}
@@ -58,7 +87,7 @@ static void restore_task_console(uint8_t console) {
 
 	for(uint16_t i = 0; i < MTSK16_VRAM_SIZE / sizeof(uint16_t); i++)
 		vram[i] = scratch[i];
-	(void)kconsole_restore_state(console, &saved_console_state);
+	(void)kconsole_restore_state(console, saved_console_state_ptr());
 	restore_interrupts(flags);
 
 	/* The menu may have selected another BIOS text page. Put the task's page
@@ -77,6 +106,7 @@ void savemenu_run(kthread_id_t task_id, uint16_t task_segment, uint8_t console,
 void savemenu_savetask(kthread_id_t task_id, uint16_t task_segment, uint8_t console) {
 	task_buffers_t buffers;
 	task_status_t status;
+	task_state_t __far *state = task_save_state_ptr();
 
 	if(task_has_open_files(task_id)) {
 		kconsole_puts(console,"Can not save - task has open file handles\r\n");
@@ -88,13 +118,13 @@ void savemenu_savetask(kthread_id_t task_id, uint16_t task_segment, uint8_t cons
 	buffers.vram.offset = (uint16_t)kernel_vram_scratch;
 	buffers.scratch.segment = SEG_KERN;
 	buffers.scratch.offset = (uint16_t)task_save_scratch;
-	task_save_state.resume_sp = task_save_resume_sp;
-	task_save_state.screen_mode = MTSK16_SCREEN_TEXT_80X25_COLOR;
-	task_save_state.vram_size = MTSK16_VRAM_SIZE;
-	task_save_state.memory_encoding = MTSK16_MEMORY_RAW;
-	task_save_state.console = saved_console_state;
+	state->resume_sp = task_save_resume_sp;
+	state->screen_mode = MTSK16_SCREEN_TEXT_80X25_COLOR;
+	state->vram_size = MTSK16_VRAM_SIZE;
+	state->memory_encoding = MTSK16_MEMORY_RAW;
+	copy_saved_console_state(&state->console, saved_console_state_ptr());
 
-	status = task_save(0, "SAVED.TSK", &buffers, &task_save_state);
+	status = task_save(0, "SAVED.TSK", &buffers, state);
 	if(status == TASK_OK) kconsole_puts(console,"Saved task to A:SAVED.TSK\r\n");
 	else kconsole_puts(console,"Could not save task\r\n");
 	kconsole_puts(console,"Press any key to return\r\n");

@@ -52,11 +52,13 @@ typedef struct task_state_t {
  * scheduler. On success, state->resume_sp identifies the restored interrupt
  * frame which the caller may later give to the scheduler.
  */
-task_status_t task_restore(uint8_t drive_no, uint16_t first_lba, const task_buffers_t *buffers, task_state_t *state);
+task_status_t task_restore(uint8_t drive_no, uint16_t first_lba,
+	                       const task_buffers_t *buffers,
+	                       task_state_t __far *state);
 
 /* Save a suspended user task as a raw-memory TSK v1 file. The named file is
  * replaced, and the task's user frame is copied from memory_segment:resume_sp.
  * vram and scratch have the same size and segment constraints as task_restore. */
 task_status_t task_save(uint8_t drive_no, const char *filename,
 	                    const task_buffers_t *buffers,
-	                    const task_state_t *state);
+	                    const task_state_t __far *state);

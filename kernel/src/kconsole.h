@@ -49,8 +49,8 @@ void kconsole_puts(uint8_t page_num, char *string);
 
 /* These functions copy only private logical state and never read or write the
  * console's VRAM. The caller must ensure the console is not being modified. */
-bool kconsole_save_state(uint8_t page_num, kconsole_saved_state_t *state);
-bool kconsole_restore_state(uint8_t page_num, const kconsole_saved_state_t *state);
+bool kconsole_save_state(uint8_t page_num, kconsole_saved_state_t __far *state);
+bool kconsole_restore_state(uint8_t page_num, const kconsole_saved_state_t __far *state);
 
 /* XT set 1, US layout. Registered callbacks run here in IRQ context: they must
  * defer BIOS calls, console switching, disk access, and other blocking work. */
