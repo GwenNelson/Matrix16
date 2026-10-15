@@ -46,6 +46,7 @@ void kconsole_switchto(uint8_t page_num);
 void kconsole_move_cursor(uint8_t page_num, uint8_t row, uint8_t col);
 void kconsole_putc(uint8_t page_num, char c);
 void kconsole_puts(uint8_t page_num, char *string);
+void kconsole_putuint(uint8_t console_num, uint16_t n);
 
 /* These functions copy only private logical state and never read or write the
  * console's VRAM. The caller must ensure the console is not being modified. */
@@ -59,6 +60,10 @@ void kconsole_kb_callback(uint8_t scancode);
 /* Nonblocking, single consumer per console. Input is never echoed here. */
 uint16_t kconsole_input_available(uint8_t page_num);
 bool kconsole_getc(uint8_t page_num, char *out);
+
+/* Read and echo a bounded line. size includes the terminating NUL; the return
+ * value is the number of characters stored, excluding that NUL. */
+uint16_t kconsole_gets(uint8_t page_num, char *buffer, uint16_t size);
 
 /* Discard queued input, then sleep until a fresh input byte arrives. This must
  * be called from ordinary kernel context after the keyboard ISR is installed. */

@@ -108,6 +108,10 @@ matfs16_status_t matfs16_locate_root(uint8_t drive_no, uint16_t *lba, uint16_t *
  */
 matfs16_status_t matfs16_read_task_slot(uint8_t drive_no, uint8_t slot, char *filename, char **result);
 
+/* Set one superblock task slot to a file's first absolute LBA, or clear it
+ * with MATFS16_TASK_SLOT_EMPTY. This updates the primary superblock checksum. */
+matfs16_status_t matfs16_write_task_slot(uint8_t drive_no, uint8_t slot, uint16_t first_block);
+
 /*
  * Find filename in the MATFS16 root directory on drive_no.
  *

@@ -82,10 +82,18 @@ static uint8_t __far *cached_blockchain_block(uint8_t drive_no, uint16_t block) 
 	                                (uint16_t)blockchain_cache[drive_no][block]);
 }
 
+static uint16_t superblock_checksum(const matfs_superblock_t __far *super) {
+	return super->media_type + super->block_size + super->block_count +
+	       super->blockchain_len + super->kernel_first_block +
+	       super->kernel_block_count + super->root_dir_start +
+	       super->root_dir_len + super->backup_super +
+	       super->blockchain_backup + super->backup_rootdir +
+	       super->task0 + super->task1 + super->task2 + super->task3;
+}
+
 static bool verify_super(matfs_superblock_t __far *super) {
 	uint16_t task_first[4];
 	uint16_t i;
-	uint16_t checksum;
 
 	if((super->magic[0] != 'M') || (super->magic[1] != 'A') || (super->magic[2] != 'T') || (super->magic[3] != '1') || (super->magic[4] != '6')) return false;
 
@@ -132,13 +140,7 @@ static bool verify_super(matfs_superblock_t __far *super) {
 	}
 
 	/* The checksum is the 16-bit sum from media_type through task3. */
-	checksum = super->media_type + super->block_size + super->block_count +
-	           super->blockchain_len + super->kernel_first_block +
-	           super->kernel_block_count + super->root_dir_start +
-	           super->root_dir_len + super->backup_super +
-	           super->blockchain_backup + super->backup_rootdir +
-	           super->task0 + super->task1 + super->task2 + super->task3;
-	if(checksum != super->checksum) return false;
+	if(superblock_checksum(super) != super->checksum) return false;
 
 	return true;
 }
@@ -656,6 +658,32 @@ matfs16_status_t matfs16_read_task_slot(uint8_t drive_no, uint8_t slot, char* fi
 	}
 }
 
+matfs16_status_t matfs16_write_task_slot(uint8_t drive_no, uint8_t slot, uint16_t first_block) {
+	uint8_t __far *scratch_buf;
+	matfs_superblock_t __far *super;
+	matfs16_status_t status;
+
+	if(drive_no > 1 || slot >= MATFS16_TASK_SLOT_COUNT) return MATFS16_ERR_INVALID_ARGUMENT;
+	if(first_block != MATFS16_TASK_SLOT_EMPTY &&
+	   (first_block < MATFS16_DATA_START_LBA || first_block >= MATFS16_BLOCK_COUNT))
+		return MATFS16_ERR_INVALID_ARGUMENT;
+
+	scratch_buf = get_scratch_buf();
+	status = load_scratch_block(drive_no, MATFS16_SUPERBLOCK_LBA);
+	if(status != MATFS16_OK) return status;
+
+	super = (matfs_superblock_t __far *)scratch_buf;
+	if(!verify_super(super)) return MATFS16_ERR_BAD_SUPERBLOCK;
+
+	if(slot == 0) super->task0 = first_block;
+	else if(slot == 1) super->task1 = first_block;
+	else if(slot == 2) super->task2 = first_block;
+	else super->task3 = first_block;
+
+	super->checksum = superblock_checksum(super);
+	return store_scratch_block(drive_no, MATFS16_SUPERBLOCK_LBA);
+}
+
 matfs16_status_t matfs16_locate_file(const char* filename, uint8_t drive_no, uint16_t* lba, uint16_t* length) {
 	matfs_directory_entry_t entry;
 	matfs16_status_t status;
@@ -738,7 +766,9 @@ matfs16_status_t matfs16_count_free_blocks(uint8_t drive_no, uint16_t* count) {
 	uint16_t value;
 	uint16_t free_blocks = 0;
 
-	if(drive_no > 1 || count == NULL) return MATFS16_ERR_INVALID_ARGUMENT;
+	if(count == NULL) return MATFS16_ERR_INVALID_ARGUMENT;
+	*count = 0;
+	if(drive_no > 1) return MATFS16_ERR_INVALID_ARGUMENT;
 	status = matfs16_cache_blockchain(drive_no);
 	if(status != MATFS16_OK) return status;
 

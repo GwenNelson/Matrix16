@@ -310,6 +310,19 @@ void kconsole_puts(uint8_t page_num, char *string) {
 		kconsole_putc(page_num, *string++);
 }
 
+void kconsole_putuint(uint8_t console_num, uint16_t n) {
+	char digits[5];
+	uint8_t count = 0;
+
+	do {
+		digits[count++] = '0' + n % 10;
+		n /= 10;
+	} while(n != 0);
+
+	while(count != 0)
+		kconsole_putc(console_num, digits[--count]);
+}
+
 bool kconsole_save_state(uint8_t page_num, kconsole_saved_state_t __far *state) {
 	if(page_num >= CONSOLE_COUNT || state == 0) return false;
 
@@ -400,6 +413,47 @@ bool kconsole_getc(uint8_t page_num, char *out) {
 	*out = console->input[(uint8_t)tail];
 	console->input_tail = tail + 1;
 	return true;
+}
+
+uint16_t kconsole_gets(uint8_t page_num, char *buffer, uint16_t size) {
+	uint16_t flags;
+	uint16_t length = 0;
+	char c;
+
+	if(page_num >= CONSOLE_COUNT || buffer == 0 || size == 0) return 0;
+	buffer[0] = '\0';
+	__asm__ volatile ("pushf; popw %0" : "=r" (flags));
+
+	for(;;) {
+		__asm__ volatile ("cli" : : : "memory");
+		while(!kconsole_getc(page_num, &c))
+			__asm__ volatile ("sti; hlt; cli" : : : "memory");
+		__asm__ volatile ("pushw %0; popf" : : "r" (flags) : "memory", "cc");
+
+		if(c == '\n' || c == '\r') {
+			kconsole_puts(page_num, "\r\n");
+			break;
+		}
+
+		if(c == '\b') {
+			if(length != 0) {
+				length--;
+				buffer[length] = '\0';
+				kconsole_puts(page_num, "\b \b");
+			}
+			continue;
+		}
+
+		if((uint8_t)c < 0x20 || (uint8_t)c > 0x7e || length >= size - 1)
+			continue;
+
+		buffer[length++] = c;
+		buffer[length] = '\0';
+		kconsole_putc(page_num, c);
+	}
+
+	__asm__ volatile ("pushw %0; popf" : : "r" (flags) : "memory", "cc");
+	return length;
 }
 
 void kconsole_wait_for_key(uint8_t page_num) {
