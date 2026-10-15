@@ -96,7 +96,7 @@ static bool     contiguous_kernel;
 static bool verify_super(matfs_superblock_t* super) {
 	uint16_t task_first[4];
 	uint16_t i;
-	uint32_t checksum;
+	uint16_t checksum;
 
 	if((super->magic[0] != 'M') || (super->magic[1] != 'A') || (super->magic[2] != 'T') || (super->magic[3] != '1') || (super->magic[4] != '6')) return false;
 
@@ -161,7 +161,7 @@ static bool verify_super(matfs_superblock_t* super) {
 	           super->root_dir_len + super->backup_super +
 	           super->blockchain_backup + super->backup_rootdir +
 	           super->task0 + super->task1 + super->task2 + super->task3;
-	if((uint16_t)checksum != super->checksum) return false;
+	if(checksum != super->checksum) return false;
 
 	kernel_first_block = super->kernel_first_block;
 	contiguous_kernel = super->kernel_block_count != 0;

@@ -98,14 +98,14 @@ static uint16_t get_u16(const unsigned char *p)
 static uint16_t checksum(const unsigned char *sector, size_t first_offset,
                          size_t last_offset, size_t skip_offset)
 {
-    uint32_t sum = 0;
+    uint16_t sum = 0;
     size_t offset;
 
     for (offset = first_offset; offset + 1 < last_offset; offset += 2) {
         if (offset != skip_offset)
             sum += get_u16(sector + offset);
     }
-    return (uint16_t)sum;
+    return sum;
 }
 
 static unsigned char *sector_at(uint16_t lba)
