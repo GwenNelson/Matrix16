@@ -36,6 +36,9 @@ uint16_t kfiles_max_descriptors(void);
  * the file lock, so it is safe while another suspended task may hold it. */
 bool task_has_open_files(kthread_id_t id);
 
+/* Close every descriptor owned by a suspended task. */
+void kfiles_close_task_files(kthread_id_t id);
+
 /*
  * Open a file at offset zero, or return KFILE_INVALID_FD on error. An empty
  * filename opens the drive's root directory as a stream of raw directory

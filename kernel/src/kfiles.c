@@ -110,6 +110,15 @@ bool task_has_open_files(kthread_id_t id) {
 	return false;
 }
 
+void kfiles_close_task_files(kthread_id_t id) {
+	/* Save-menu handoff runs with user tasks paused, and its target is outside
+	 * a syscall. Do not take file_lock: another paused task may hold it. */
+	for(uint16_t fd = 0; fd < file_descriptor_count; fd++) {
+		if(file_descriptors[fd].used && file_descriptors[fd].owner == id)
+			file_descriptors[fd].used = false;
+	}
+}
+
 uint8_t kfile_open(uint8_t drive_num, const char* filename) {
 	matfs16_status_t status;
 	uint16_t first_lba;

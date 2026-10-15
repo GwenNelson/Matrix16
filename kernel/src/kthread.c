@@ -297,6 +297,20 @@ void kthread_wake(kthread_id_t id) {
 }
 
 void kthread_exit(kthread_id_t id) {
+	uint16_t irq_flags;
+	if(id < KTHREAD_USER_TSK0_ID || id > KTHREAD_USER_TSK3_ID || id == cur_thread)
+		return;
+
+	kthread_critical_enter(irq_flags);
+	threads[id].pending_save_menu = false;
+	threads[id].in_syscall = false;
+	threads[id].ss = 0;
+	threads[id].sp = 0;
+	threads[id].task_segment = 0;
+	threads[id].console = KTHREAD_CONSOLE_NONE;
+	threads[id].state = KTHREAD_UNUSED;
+	started[id] = false;
+	kthread_critical_exit(irq_flags);
 }
 
 void kthread_schedule(void) {

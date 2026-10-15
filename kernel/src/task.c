@@ -2,6 +2,8 @@
 #include <stdint.h>
 
 #include "bioscons.h"
+#include "kfiles.h"
+#include "kthread.h"
 #include "kmemmap.h"
 #include "lzss.h"
 #include "matfs16.h"
@@ -18,6 +20,9 @@
 
 static const char task_magic[MTSK16_MAGIC_SIZE] = MTSK16_MAGIC;
 static uint8_t task_lzss_history[M16_LZSS_WINDOW_SIZE] SEG_SYS_BSS;
+
+extern void copy_words_between_segments(uint16_t source_seg, uint16_t dest_seg,
+	                                    uint16_t word_count);
 
 static uint8_t __far *task_lzss_history_ptr(void) {
 	return (uint8_t __far *)mk_farptr(SEG_SYS,
@@ -232,6 +237,59 @@ task_status_t task_restore(uint8_t drive_no, uint16_t first_lba,
 	copy_console_state(&header->console, &state->console);
 
 	return TASK_OK;
+}
+
+static bool task_segment_matches_id(kthread_id_t task_id, uint16_t segment) {
+	if(task_id == KTHREAD_USER_TSK0_ID) return segment == SEG_USER0;
+	if(task_id == KTHREAD_USER_TSK1_ID) return segment == SEG_USER1;
+	if(task_id == KTHREAD_USER_TSK2_ID) return segment == SEG_USER2;
+	if(task_id == KTHREAD_USER_TSK3_ID) return segment == SEG_USER3;
+	return false;
+}
+
+task_status_t task_replace(kthread_id_t task_id, uint8_t drive_no,
+	                       uint16_t first_lba, uint16_t task_segment,
+	                       uint8_t console, const task_buffers_t *buffers,
+	                       task_state_t __far *state) {
+	task_buffers_t staged_buffers;
+	task_status_t status;
+	mtsk16_context_isr_v1_t __far *context;
+
+	if(buffers == 0 || state == 0 || console >= 4 ||
+	   task_id == kthread_cur_thread() ||
+	   !task_segment_matches_id(task_id, task_segment))
+		return TASK_ERR_INVALID_ARGUMENT;
+
+	/* Keep the old task intact until the full file has validated and loaded. */
+	staged_buffers = *buffers;
+	staged_buffers.memory_segment = SEG_RESV_USER;
+	status = task_restore(drive_no, first_lba, &staged_buffers, state);
+	if(status != TASK_OK) return status;
+
+	/* The target is frozen outside a syscall, so its handles can be discarded
+	 * immediately before committing the new memory image. */
+	kfiles_close_task_files(task_id);
+	copy_words_between_segments(SEG_RESV_USER, task_segment, 0x8000);
+
+	/* task_restore built the context for the staging segment. Relocate the
+	 * saved data segments and return CS to the task's assigned segment. */
+	context = (mtsk16_context_isr_v1_t __far *)mk_farptr(task_segment,
+	                                                    state->resume_sp);
+	context->es = task_segment;
+	context->ds = task_segment;
+	context->cs = task_segment;
+
+	kthread_setup_restored(task_id, task_segment, state->resume_sp, console);
+	return TASK_OK;
+}
+
+bool task_terminate(kthread_id_t task_id) {
+	if(task_id < KTHREAD_USER_TSK0_ID || task_id > KTHREAD_USER_TSK3_ID ||
+	   task_id == kthread_cur_thread()) return false;
+
+	kfiles_close_task_files(task_id);
+	kthread_exit(task_id);
+	return true;
 }
 
 task_status_t task_save(uint8_t drive_no, const char *filename,

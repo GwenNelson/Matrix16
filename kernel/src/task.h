@@ -3,6 +3,7 @@
 #include <stdint.h>
 
 #include "kconsole.h"
+#include "kthread.h"
 
 /* Task images contain a suspended user context only. They never contain a
  * syscall continuation or a kernel stack. */
@@ -55,6 +56,18 @@ typedef struct task_state_t {
 task_status_t task_restore(uint8_t drive_no, uint16_t first_lba,
 	                       const task_buffers_t *buffers,
 	                       task_state_t __far *state);
+
+/* Replace a suspended user task from a TSK file. The replacement is first
+ * loaded into SEG_RESV_USER; on success its memory and scheduler frame replace
+ * the old task, and its open file handles are closed. buffers->vram receives
+ * the restored screen image. */
+task_status_t task_replace(kthread_id_t task_id, uint8_t drive_no,
+	                       uint16_t first_lba, uint16_t task_segment,
+	                       uint8_t console, const task_buffers_t *buffers,
+	                       task_state_t __far *state);
+
+/* End a suspended user task and close all of its open file handles. */
+bool task_terminate(kthread_id_t task_id);
 
 /* Save a suspended user task as a raw-memory TSK v1 file. The named file is
  * replaced, and the task's user frame is copied from memory_segment:resume_sp.
