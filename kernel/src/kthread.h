@@ -55,6 +55,8 @@ void kthread_start(void); // actually start scheduling tasks - does not return
 
 int kthread_setup(kthread_id_t id, uint16_t seg, kthread_entry_t entry, uint16_t stack_top, uint8_t console);
 int kthread_setup_restored(kthread_id_t id, uint16_t seg, uint16_t sp, uint8_t console);
+void kthread_set_task_slot(kthread_id_t id, uint16_t segment, uint8_t console);
+bool kthread_task_is_active(kthread_id_t id);
 
 void kthread_yield(void);
 

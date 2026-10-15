@@ -30,7 +30,7 @@ $(BUILD)/switchto.o: $(SRC)/switchto.asm | $(BUILD)
 $(BUILD)/waitkey.o: $(SRC)/waitkey.asm | $(BUILD)
 	$(NASM) -f elf $< -o $@
 
-$(BUILD)/kmain.o: $(SRC)/kmain.c $(SRC)/bioscons.h $(SRC)/biosdisk.h $(SRC)/isr.h $(SRC)/kfiles.h $(SRC)/kpanic.h $(SRC)/matfs16.h $(SRC)/mtsk16.h $(SRC)/parsecfg.h $(SRC)/kmemmap.h $(SRC)/task.h ../common/libc/include/string.h $(SRC)/utils.h | $(BUILD)
+$(BUILD)/kmain.o: $(SRC)/kmain.c $(SRC)/bioscons.h $(SRC)/biosdisk.h $(SRC)/isr.h $(SRC)/kfiles.h $(SRC)/kpanic.h $(SRC)/matfs16.h $(SRC)/mtsk16.h $(SRC)/parsecfg.h $(SRC)/kmemmap.h $(SRC)/task.h $(SRC)/kthread.h ../common/libc/include/string.h $(SRC)/utils.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/kmain.c -o $@
 
 $(BUILD)/parsecfg.o: $(SRC)/parsecfg.c $(SRC)/parsecfg.h $(SRC)/bioscons.h $(SRC)/kfiles.h $(SRC)/matfs16.h ../common/libc/include/string.h | $(BUILD)

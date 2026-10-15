@@ -99,17 +99,53 @@ bool kthread_current_console(uint8_t *console) {
 kthread_id_t kthread_from_console(uint8_t console) {
 	kthread_id_t id;
 
+	if(console >= 4) return KTHREAD_INVALID_ID;
 	for(id = KTHREAD_USER_TSK0_ID; id <= KTHREAD_USER_TSK3_ID; id++) {
-		if(threads[id].state != KTHREAD_UNUSED && threads[id].console == console) return id;
+		if(threads[id].task_segment != 0 && threads[id].console == console) return id;
 	}
 
 	return KTHREAD_INVALID_ID;
 }
 
+void kthread_set_task_slot(kthread_id_t id, uint16_t segment, uint8_t console) {
+	if(id < KTHREAD_USER_TSK0_ID || id > KTHREAD_USER_TSK3_ID ||
+	   segment == 0 || console >= 6 || threads[id].state != KTHREAD_UNUSED)
+		return;
+
+	threads[id].id = id;
+	threads[id].ss = 0;
+	threads[id].sp = 0;
+	threads[id].task_segment = segment;
+	threads[id].console = console;
+	threads[id].pending_save_menu = false;
+	threads[id].in_syscall = false;
+}
+
+bool kthread_task_is_active(kthread_id_t id) {
+	if(id < KTHREAD_USER_TSK0_ID || id > KTHREAD_USER_TSK3_ID) return false;
+	return threads[id].state != KTHREAD_UNUSED;
+}
+
 void kthread_set_pending_save_menu(kthread_id_t id, bool pending) {
-	if(id > KTHREAD_MAX_ID) return;
-	if(pending && save_menu_active) return;
-	threads[id].pending_save_menu = pending;
+	uint16_t irq_flags;
+	if(id < KTHREAD_USER_TSK0_ID || id > KTHREAD_USER_TSK3_ID) return;
+
+	kthread_critical_enter(irq_flags);
+	if(!pending) {
+		threads[id].pending_save_menu = false;
+	} else if(!save_menu_active) {
+		if(threads[id].state == KTHREAD_UNUSED && threads[id].task_segment != 0) {
+			/* No user frame exists to hand off for an empty slot. Queue the
+			 * event-thread menu directly; replacement can make the slot READY. */
+			save_menu_target = id;
+			save_menu_resume_sp = 0;
+			save_menu_requested = true;
+			save_menu_active = true;
+		} else if(threads[id].state != KTHREAD_UNUSED) {
+			threads[id].pending_save_menu = true;
+		}
+	}
+	kthread_critical_exit(irq_flags);
 }
 
 bool kthread_is_pending_save_menu(kthread_id_t id) {
@@ -306,8 +342,6 @@ void kthread_exit(kthread_id_t id) {
 	threads[id].in_syscall = false;
 	threads[id].ss = 0;
 	threads[id].sp = 0;
-	threads[id].task_segment = 0;
-	threads[id].console = KTHREAD_CONSOLE_NONE;
 	threads[id].state = KTHREAD_UNUSED;
 	started[id] = false;
 	kthread_critical_exit(irq_flags);

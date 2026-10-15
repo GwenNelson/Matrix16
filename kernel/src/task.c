@@ -285,7 +285,8 @@ task_status_t task_replace(kthread_id_t task_id, uint8_t drive_no,
 
 bool task_terminate(kthread_id_t task_id) {
 	if(task_id < KTHREAD_USER_TSK0_ID || task_id > KTHREAD_USER_TSK3_ID ||
-	   task_id == kthread_cur_thread()) return false;
+	   task_id == kthread_cur_thread() || !kthread_task_is_active(task_id))
+		return false;
 
 	kfiles_close_task_files(task_id);
 	kthread_exit(task_id);

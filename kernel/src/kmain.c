@@ -132,7 +132,6 @@ static void skip_systemcfg_prompt(void) {
 
 kconsole_saved_state_t task_console_states[4] SEG_SYS_BSS; // we only have 4 VCs max
 static bool task_console_state_valid[4];
-static uint16_t next_free_task_segment = SEG_USER0;
 /* Startup task loading and the later save menu use this at separate times. */
 uint8_t kernel_vram_scratch[MTSK16_VRAM_SIZE] SEG_SYS_BSS;
 static task_state_t startup_task_state SEG_SYS_BSS;
@@ -201,19 +200,6 @@ static void startup_filename_copy(char __far *destination, const char *source) {
 		if(source[i] == '\0') return;
 	}
 	destination[MATFS16_FILENAME_MAXLEN - 1] = '\0';
-}
-
-static uint16_t allocate_task_segment(void) {
-	uint16_t segment;
-
-	if(next_free_task_segment > SEG_USER3) return 0;
-	segment = next_free_task_segment;
-	next_free_task_segment += 0x1000;
-	return segment;
-}
-
-static void release_task_segment(uint16_t segment) {
-	if(next_free_task_segment == segment + 0x1000) next_free_task_segment = segment;
 }
 
 static void report_startup_error(char* message) {
@@ -401,8 +387,7 @@ static void startup_configured_task(uint8_t task_number) {
 		return;
 	}
 
-	task_segment = allocate_task_segment();
-	if(task_segment == 0) kpanic("No free task segment");
+	task_segment = SEG_USER0 + (uint16_t)task_number * 0x1000;
 
 	switch(system_cfg.tasks[task_number].source) {
 		case SYSTEM_CFG_SOURCE_DEFAULT:
@@ -430,7 +415,6 @@ static void startup_configured_task(uint8_t task_number) {
 			strcpy(task_filename, system_cfg.tasks[task_number].filename);
 			break;
 		default:
-			release_task_segment(task_segment);
 			kpanic("startup_all_tasks() - invalid state");
 	}
 
@@ -442,11 +426,15 @@ static void startup_configured_task(uint8_t task_number) {
 		task_loaded = startup_error_action(task_number, task_segment, console);
 	}
 
-	if(!task_loaded) release_task_segment(task_segment);
 }
 
 void startup_all_tasks(void) {
 	uint8_t i;
+	for(i = 0; i < 4; i++) {
+		kthread_set_task_slot(KTHREAD_USER_TSK0_ID + i,
+		                      SEG_USER0 + (uint16_t)i * 0x1000,
+		                      (uint8_t)system_cfg.tasks[i].console);
+	}
 
 	/* BIOS startup diagnostics are written to visible page VC0. Load tasks for
 	 * the other consoles first, so any diagnostics they produce happen before

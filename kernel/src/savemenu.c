@@ -120,6 +120,11 @@ void savemenu_savetask(kthread_id_t task_id, uint16_t task_segment, uint8_t cons
 	task_status_t  status;
 	task_state_t __far *state = task_save_state_ptr();
 
+	if(!kthread_task_is_active(task_id)) {
+		kconsole_puts(console,"Can not save - task slot is empty\r\n");
+		goto finish;
+	}
+
 	if(task_has_open_files(task_id)) {
 		kconsole_puts(console,"Can not save - task has open file handles\r\n");
 		goto finish;
@@ -352,7 +357,12 @@ void savemenu_terminatetask(kthread_id_t task_id, uint16_t task_segment, uint8_t
 		(uint8_t __far *)mk_farptr(SEG_SYS, (uint16_t)kernel_vram_scratch);
 
 	(void)task_segment;
-	if(!task_terminate(task_id)) return;
+	if(!task_terminate(task_id)) {
+		kconsole_puts(console,"Task slot is already empty\r\n");
+		kconsole_puts(console,"Press any key to return to the menu\r\n");
+		kconsole_wait_for_key(console);
+		return;
+	}
 
 	/* Do not let savemenu_run restore the terminated task's old display. */
 	for(uint16_t i = 0; i < MTSK16_VRAM_SIZE; i++) saved_vram[i] = 0;
