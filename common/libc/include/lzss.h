@@ -34,6 +34,16 @@ typedef struct m16_lzss_length_t {
 #define M16_LZSS_FAR
 #endif
 
+typedef bool (*m16_lzss_sink_t)(void *context, const uint8_t *bytes,
+	                            uint16_t count);
+
+/* Encode through a bounded sink, so callers need not keep a second 64 KiB
+ * output buffer. The input may be a full 64 KiB image ({128, 0}). */
+bool m16_lzss_compress_to_sink(const uint8_t M16_LZSS_FAR *input,
+	                           m16_lzss_length_t input_length,
+	                           m16_lzss_sink_t sink, void *context,
+	                           uint16_t *output_size);
+
 /*
  * Compress one buffer. Returns true only when the output fits and is strictly
  * smaller than the input. output_size is set to zero on failure. A 64 KiB

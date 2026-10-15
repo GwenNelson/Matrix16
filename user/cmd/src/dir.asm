@@ -217,6 +217,12 @@ matches_pattern:
 	je .pattern_end
 	cmp al, '?'
 	je .question
+	cmp al, 'a'
+	jb .compare
+	cmp al, 'z'
+	ja .compare
+	sub al, 'a' - 'A'
+.compare:
 	cmp al, bl
 	je .advance
 	jmp .try_star

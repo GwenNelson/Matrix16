@@ -92,6 +92,8 @@ user/cmd/build/EDIT.CMD: cmds
 
 user/cmd/build/ASM.CMD: cmds
 
+user/cmd/build/LINK.CMD: cmds
+
 basic: taskgen
 	$(MAKE) -C user/basic/
 
@@ -118,7 +120,7 @@ boot/stage2/build/stage2.bin: stage2
 
 kernel/build/kernel.bin: kernel
 
-rootfs.img: boot/stage1/build/bootsector.bin boot/stage2/build/stage2.bin kernel/build/kernel.bin fsgen rootfs/SHELL.TSK rootfs/HELLO.TSK user/basic/build/BASIC.TSK user/cmd/build/CLS.CMD user/cmd/build/TYPE.CMD user/cmd/build/DIR.CMD user/cmd/build/SET.CMD user/cmd/build/HELP.CMD user/cmd/build/FORMAT.CMD user/cmd/build/CREATEFILE.CMD user/cmd/build/COPY.CMD user/cmd/build/COPYSYS.CMD user/cmd/build/DEL.CMD user/cmd/build/MORE.CMD user/cmd/build/REN.CMD user/cmd/build/DISKUSAGE.CMD user/cmd/build/TERMINATE.CMD user/cmd/build/EXEC.CMD user/cmd/build/EDIT.CMD user/cmd/build/ASM.CMD rootfs/ASMGUIDE.TXT rootfs/README.TXT rootfs/SYSTEM.CFG
+rootfs.img: boot/stage1/build/bootsector.bin boot/stage2/build/stage2.bin kernel/build/kernel.bin fsgen rootfs/SHELL.TSK rootfs/HELLO.TSK user/basic/build/BASIC.TSK user/cmd/build/CLS.CMD user/cmd/build/TYPE.CMD user/cmd/build/DIR.CMD user/cmd/build/SET.CMD user/cmd/build/HELP.CMD user/cmd/build/FORMAT.CMD user/cmd/build/CREATEFILE.CMD user/cmd/build/COPY.CMD user/cmd/build/COPYSYS.CMD user/cmd/build/DEL.CMD user/cmd/build/MORE.CMD user/cmd/build/REN.CMD user/cmd/build/DISKUSAGE.CMD user/cmd/build/TERMINATE.CMD user/cmd/build/EXEC.CMD user/cmd/build/EDIT.CMD user/cmd/build/ASM.CMD user/cmd/build/LINK.CMD rootfs/ASMGUIDE.TXT rootfs/README.TXT rootfs/SYSTEM.CFG rootfs/testcmd.asm rootfs/testtsk.asm
 	./fsgen/fsgen rootfs.img \
 		--bootsector boot/stage1/build/bootsector.bin \
 		--stage2 boot/stage2/build/stage2.bin \
@@ -143,8 +145,11 @@ rootfs.img: boot/stage1/build/bootsector.bin boot/stage2/build/stage2.bin kernel
 		--file EXEC.CMD=user/cmd/build/EXEC.CMD \
 		--file EDIT.CMD=user/cmd/build/EDIT.CMD \
 		--file ASM.CMD=user/cmd/build/ASM.CMD \
+		--file LINK.CMD=user/cmd/build/LINK.CMD \
 		--file ASMGUIDE.TXT=rootfs/ASMGUIDE.TXT \
 		--file README.TXT=rootfs/README.TXT \
+		--file TESTCMD.ASM=rootfs/testcmd.asm \
+		--file TESTTSK.ASM=rootfs/testtsk.asm \
 		--file SYSTEM.CFG=rootfs/SYSTEM.CFG
 
 
