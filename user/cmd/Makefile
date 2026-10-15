@@ -15,7 +15,7 @@ COMMON_LIBC_INPUTS = ../../common/libc/Makefile ../../common/libc/src/string.c .
 USER_LIBC = ../libc/build/libm16c-user.a
 USER_LIBC_INPUTS = ../libc/Makefile ../libc/src/printf.c ../libc/src/syscalls.c ../libc/include/stdio.h ../libc/include/syscalls.h ../../include/syscalls.inc
 
-all: $(BUILD)/CLS.CMD $(BUILD)/TYPE.CMD $(BUILD)/DIR.CMD $(BUILD)/SET.CMD $(BUILD)/HELP.CMD $(BUILD)/FORMAT.CMD $(BUILD)/CREATEFILE.CMD $(BUILD)/COPY.CMD $(BUILD)/DEL.CMD $(BUILD)/MORE.CMD
+all: $(BUILD)/CLS.CMD $(BUILD)/TYPE.CMD $(BUILD)/DIR.CMD $(BUILD)/SET.CMD $(BUILD)/HELP.CMD $(BUILD)/FORMAT.CMD $(BUILD)/CREATEFILE.CMD $(BUILD)/COPY.CMD $(BUILD)/COPYSYS.CMD $(BUILD)/DEL.CMD $(BUILD)/MORE.CMD
 
 $(BUILD):
 	mkdir -p $@
@@ -51,10 +51,16 @@ $(BUILD)/format_entry.o: $(SRC)/format_entry.asm | $(BUILD)
 $(BUILD)/createfile_entry.o: $(SRC)/createfile_entry.asm | $(BUILD)
 	$(NASM) -f elf $< -o $@
 
+$(BUILD)/copysys_entry.o: $(SRC)/copysys_entry.asm | $(BUILD)
+	$(NASM) -f elf $< -o $@
+
 $(BUILD)/format.o: $(SRC)/format.c ../libc/include/stdio.h ../libc/include/syscalls.h ../../include/syscalls.inc | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILD)/createfile.o: $(SRC)/createfile.c ../libc/include/stdio.h ../libc/include/syscalls.h ../../include/syscalls.inc | $(BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/copysys.o: $(SRC)/copysys.c ../libc/include/stdio.h ../libc/include/syscalls.h ../../include/syscalls.inc | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(COMMON_LIBC): $(COMMON_LIBC_INPUTS)
@@ -69,12 +75,20 @@ $(BUILD)/format.elf: $(BUILD)/format_entry.o $(BUILD)/format.o $(USER_LIBC) $(CO
 $(BUILD)/createfile.elf: $(BUILD)/createfile_entry.o $(BUILD)/createfile.o $(USER_LIBC) $(COMMON_LIBC) $(SRC)/createfile.ld
 	$(LD) $(LDFLAGS) -Map $(BUILD)/createfile.map -T $(SRC)/createfile.ld -o $@ $(filter-out $(SRC)/createfile.ld,$^)
 
+$(BUILD)/copysys.elf: $(BUILD)/copysys_entry.o $(BUILD)/copysys.o $(USER_LIBC) $(COMMON_LIBC) $(SRC)/copysys.ld
+	$(LD) $(LDFLAGS) -Map $(BUILD)/copysys.map -T $(SRC)/copysys.ld -o $@ $(filter-out $(SRC)/copysys.ld,$^)
+
 $(BUILD)/FORMAT.CMD: $(BUILD)/format.elf
 	$(OBJCOPY) -O binary $< $@
 	@test "$$(wc -c < $@)" -le $(CMD_MAX_SIZE) || \
 		{ echo "$@ exceeds the 8000h-EFFFh command region"; false; }
 
 $(BUILD)/CREATEFILE.CMD: $(BUILD)/createfile.elf
+	$(OBJCOPY) -O binary $< $@
+	@test "$$(wc -c < $@)" -le $(CMD_MAX_SIZE) || \
+		{ echo "$@ exceeds the 8000h-EFFFh command region"; false; }
+
+$(BUILD)/COPYSYS.CMD: $(BUILD)/copysys.elf
 	$(OBJCOPY) -O binary $< $@
 	@test "$$(wc -c < $@)" -le $(CMD_MAX_SIZE) || \
 		{ echo "$@ exceeds the 8000h-EFFFh command region"; false; }
@@ -95,6 +109,6 @@ $(BUILD)/COPY.CMD: $(SRC)/copy.asm | $(BUILD)
 		{ echo "$@ exceeds the 8000h-EFFFh command region"; false; }
 
 clean:
-	rm -f $(BUILD)/CLS.CMD $(BUILD)/TYPE.CMD $(BUILD)/DIR.CMD $(BUILD)/SET.CMD $(BUILD)/HELP.CMD $(BUILD)/format_entry.o $(BUILD)/format.o $(BUILD)/format.elf $(BUILD)/format.map $(BUILD)/FORMAT.CMD $(BUILD)/createfile_entry.o $(BUILD)/createfile.o $(BUILD)/createfile.elf $(BUILD)/createfile.map $(BUILD)/CREATEFILE.CMD $(BUILD)/COPY.CMD $(BUILD)/DEL.CMD $(BUILD)/MORE.CMD
+	rm -f $(BUILD)/CLS.CMD $(BUILD)/TYPE.CMD $(BUILD)/DIR.CMD $(BUILD)/SET.CMD $(BUILD)/HELP.CMD $(BUILD)/format_entry.o $(BUILD)/format.o $(BUILD)/format.elf $(BUILD)/format.map $(BUILD)/FORMAT.CMD $(BUILD)/createfile_entry.o $(BUILD)/createfile.o $(BUILD)/createfile.elf $(BUILD)/createfile.map $(BUILD)/CREATEFILE.CMD $(BUILD)/copysys_entry.o $(BUILD)/copysys.o $(BUILD)/copysys.elf $(BUILD)/copysys.map $(BUILD)/COPYSYS.CMD $(BUILD)/COPY.CMD $(BUILD)/DEL.CMD $(BUILD)/MORE.CMD
 
 .PHONY: all clean
