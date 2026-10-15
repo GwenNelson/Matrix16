@@ -18,10 +18,11 @@ typedef struct console_state_t {
 	uint8_t saved_row;
 	uint8_t saved_col;
 	uint8_t attribute;
+	uint8_t cursor_visible;
 	bool wrap;
 	bool caps_lock;
 	bool num_lock;
-	uint8_t ansi_state; /* 0: text, 1: ESC, 2: CSI, 3: legacy discarded CSI. */
+	uint8_t ansi_state; /* 0: text, 1: ESC, 2: CSI, 3: DEC private CSI. */
 	uint8_t param_index;
 	uint16_t params[KCONSOLE_ANSI_PARAMS];
 	volatile uint16_t input_head;
@@ -33,6 +34,7 @@ static console_state_t consoles[CONSOLE_COUNT] SEG_SYS_BSS;
 static uint8_t active_console;
 static void (*kb_save_cb)(uint8_t console_num);
 static void (*kb_switch_cb)(uint8_t console_num);
+static void set_cursor_visible(bool visible);
 
 /* Console state lives in SEG_SYS; ordinary kernel data accesses use DS=SEG_KERN. */
 static console_state_t __far *console_state(uint8_t page_num) {
@@ -81,6 +83,7 @@ static void update_cursor(uint8_t page_num) {
 	uint16_t bx = (uint16_t)page_num << 8;
 	console_state_t __far *console = console_state(page_num);
 	uint16_t dx = ((uint16_t)console->row << 8) | console->col;
+	set_cursor_visible(console->cursor_visible != 0);
 	__asm__ volatile ("int $0x10" : "+a" (ax), "+b" (bx), "+d" (dx) : : "cc", "memory");
 }
 
@@ -150,6 +153,7 @@ void kconsole_init(uint8_t page_num) {
 	console->saved_row = 0;
 	console->saved_col = 0;
 	console->attribute = 0x07;
+	console->cursor_visible = 1;
 	console->wrap = false;
 	console->caps_lock = false;
 	console->num_lock = false;
@@ -201,6 +205,21 @@ static uint8_t ansi_color(uint8_t color) {
 	return ((color & 1) << 2) | (color & 2) | ((color & 4) >> 2);
 }
 
+static void set_cursor_visible(bool visible) {
+	/* INT 10h/AH=01h sets the cursor shape; CH bit 5 disables the cursor. */
+	uint16_t ax = 0x0100;
+	uint16_t cx = visible ? 0x0607 : 0x2007;
+	__asm__ volatile ("int $0x10" : "+a" (ax), "+c" (cx) : : "cc", "memory");
+}
+
+static void ansi_private_command(uint8_t page_num, char command) {
+	console_state_t __far *console = console_state(page_num);
+	if(console->param_index != 0 || console->params[0] != 25) return;
+	if(command == 'l') console->cursor_visible = 0;
+	if(command == 'h') console->cursor_visible = 1;
+	if(page_num == active_console) set_cursor_visible(console->cursor_visible != 0);
+}
+
 static void ansi_command(uint8_t page_num, char command) {
 	console_state_t __far *console = console_state(page_num);
 	uint16_t row = console->row;
@@ -242,7 +261,7 @@ void kconsole_putc(uint8_t page_num, char c) {
 		return;
 	console_state_t __far *console = console_state(page_num);
 	uint8_t byte = (uint8_t)c;
-	if(console->ansi_state > 2) console->ansi_state = 0;
+	if(console->ansi_state > 3) console->ansi_state = 0;
 	if(byte == 0x1b) {
 		console->ansi_state = 1;
 		return;
@@ -257,10 +276,27 @@ void kconsole_putc(uint8_t page_num, char c) {
 		}
 		return;
 	}
+	if(console->ansi_state == 3) {
+		if(byte >= 0x40 && byte <= 0x7e) {
+			ansi_private_command(page_num, c);
+			console->ansi_state = 0;
+		} else if(c >= '0' && c <= '9') {
+			uint16_t value = console->params[console->param_index];
+			value = value * 10 + c - '0';
+			console->params[console->param_index] = value > 255 ? 255 : value;
+		} else if(c == ';' && console->param_index == 0) {
+			console->param_index++;
+		} else {
+			console->ansi_state = 0;
+		}
+		return;
+	}
 	if(console->ansi_state == 2) {
 		if(byte >= 0x40 && byte <= 0x7e) {
 			ansi_command(page_num, c);
 			console->ansi_state = 0;
+		} else if(c == '?' && console->param_index == 0 && console->params[0] == 0) {
+			console->ansi_state = 3;
 		} else {
 			if(c >= '0' && c <= '9') {
 				uint16_t value = console->params[console->param_index];
@@ -336,6 +372,7 @@ bool kconsole_save_state(uint8_t page_num, kconsole_saved_state_t __far *state) 
 	state->saved_row = console->saved_row;
 	state->saved_col = console->saved_col;
 	state->attribute = console->attribute;
+	state->cursor_visible = console->cursor_visible;
 	state->wrap = console->wrap;
 	state->caps_lock = console->caps_lock;
 	state->num_lock = console->num_lock;
@@ -352,7 +389,8 @@ bool kconsole_restore_state(uint8_t page_num, const kconsole_saved_state_t __far
 	if(page_num >= CONSOLE_COUNT || state == 0) return false;
 	if(state->row >= ROWS || state->col >= COLS) return false;
 	if(state->saved_row >= ROWS || state->saved_col >= COLS) return false;
-	if(state->wrap > 1 || state->caps_lock > 1 || state->num_lock > 1) return false;
+	if(state->cursor_visible > 1 || state->wrap > 1 ||
+	   state->caps_lock > 1 || state->num_lock > 1) return false;
 	if(state->ansi_state > 3 || state->param_index >= KCONSOLE_ANSI_PARAMS) return false;
 	if(state->input_length > KCONSOLE_INPUT_SIZE) return false;
 	for(uint8_t i = 0; i < KCONSOLE_ANSI_PARAMS; i++) {
@@ -365,6 +403,7 @@ bool kconsole_restore_state(uint8_t page_num, const kconsole_saved_state_t __far
 	console->saved_row = state->saved_row;
 	console->saved_col = state->saved_col;
 	console->attribute = state->attribute;
+	console->cursor_visible = state->cursor_visible;
 	console->wrap = state->wrap;
 	console->caps_lock = state->caps_lock;
 	console->num_lock = state->num_lock;

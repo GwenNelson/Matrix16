@@ -57,10 +57,11 @@ task_status_t task_restore(uint8_t drive_no, uint16_t first_lba,
 	                       const task_buffers_t *buffers,
 	                       task_state_t __far *state);
 
-/* Replace a suspended user task from a TSK file. The replacement is first
- * loaded into SEG_RESV_USER; on success its memory and scheduler frame replace
- * the old task, and its open file handles are closed. buffers->vram receives
- * the restored screen image. */
+/* Replace a suspended user task from a TSK file, loading directly into its
+ * assigned segment. On success its restored frame replaces the old one and
+ * its open file handles are closed. If loading fails, the old task is
+ * terminated because its segment may have been partially overwritten.
+ * buffers->vram receives the restored screen image. */
 task_status_t task_replace(kthread_id_t task_id, uint8_t drive_no,
 	                       uint16_t first_lba, uint16_t task_segment,
 	                       uint8_t console, const task_buffers_t *buffers,

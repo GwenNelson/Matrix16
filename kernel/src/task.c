@@ -21,9 +21,6 @@
 static const char task_magic[MTSK16_MAGIC_SIZE] = MTSK16_MAGIC;
 static uint8_t task_lzss_history[M16_LZSS_WINDOW_SIZE] SEG_SYS_BSS;
 
-extern void copy_words_between_segments(uint16_t source_seg, uint16_t dest_seg,
-	                                    uint16_t word_count);
-
 static uint8_t __far *task_lzss_history_ptr(void) {
 	return (uint8_t __far *)mk_farptr(SEG_SYS,
 	                                (uint16_t)task_lzss_history);
@@ -72,11 +69,12 @@ static task_status_t validate_header(const mtsk16_header_t __far *header) {
 		if(header->memory_stored_blocks == MTSK16_MEMORY_BLOCKS &&
 		   header->memory_last_block_bytes == MATFS16_BLOCK_SIZE) return TASK_ERR_BAD_HEADER;
 	}
-	if(header->console_state_format != MTSK16_CONSOLE_STATE_V1) return TASK_ERR_BAD_HEADER;
-	if(header->console_state_size != sizeof(mtsk16_console_state_v1_t)) return TASK_ERR_BAD_HEADER;
+	if(header->console_state_format != MTSK16_CONSOLE_STATE_V2) return TASK_ERR_BAD_HEADER;
+	if(header->console_state_size != sizeof(mtsk16_console_state_v2_t)) return TASK_ERR_BAD_HEADER;
 	if(header->console.row >= TASK_SCREEN_ROWS || header->console.col >= TASK_SCREEN_COLS) return TASK_ERR_BAD_HEADER;
 	if(header->console.saved_row >= TASK_SCREEN_ROWS || header->console.saved_col >= TASK_SCREEN_COLS) return TASK_ERR_BAD_HEADER;
-	if(header->console.wrap > 1 || header->console.caps_lock > 1 || header->console.num_lock > 1) return TASK_ERR_BAD_HEADER;
+	if(header->console.cursor_visible > 1 || header->console.wrap > 1 ||
+	   header->console.caps_lock > 1 || header->console.num_lock > 1) return TASK_ERR_BAD_HEADER;
 	if(header->console.ansi_state > 3 || header->console.param_index >= MTSK16_CONSOLE_ANSI_PARAMS) return TASK_ERR_BAD_HEADER;
 	if(header->console.input_length > MTSK16_CONSOLE_INPUT_SIZE) return TASK_ERR_BAD_HEADER;
 	for(uint8_t i = 0; i < MTSK16_CONSOLE_ANSI_PARAMS; i++) {
@@ -88,13 +86,14 @@ static task_status_t validate_header(const mtsk16_header_t __far *header) {
 	return TASK_OK;
 }
 
-static void copy_console_state(const mtsk16_console_state_v1_t __far *source,
+static void copy_console_state(const mtsk16_console_state_v2_t __far *source,
 	                           kconsole_saved_state_t __far *destination) {
 	destination->row = source->row;
 	destination->col = source->col;
 	destination->saved_row = source->saved_row;
 	destination->saved_col = source->saved_col;
 	destination->attribute = source->attribute;
+	destination->cursor_visible = source->cursor_visible;
 	destination->wrap = source->wrap;
 	destination->caps_lock = source->caps_lock;
 	destination->num_lock = source->num_lock;
@@ -251,7 +250,7 @@ task_status_t task_replace(kthread_id_t task_id, uint8_t drive_no,
 	                       uint16_t first_lba, uint16_t task_segment,
 	                       uint8_t console, const task_buffers_t *buffers,
 	                       task_state_t __far *state) {
-	task_buffers_t staged_buffers;
+	task_buffers_t target_buffers;
 	task_status_t status;
 	mtsk16_context_isr_v1_t __far *context;
 
@@ -260,19 +259,22 @@ task_status_t task_replace(kthread_id_t task_id, uint8_t drive_no,
 	   !task_segment_matches_id(task_id, task_segment))
 		return TASK_ERR_INVALID_ARGUMENT;
 
-	/* Keep the old task intact until the full file has validated and loaded. */
-	staged_buffers = *buffers;
-	staged_buffers.memory_segment = SEG_RESV_USER;
-	status = task_restore(drive_no, first_lba, &staged_buffers, state);
-	if(status != TASK_OK) return status;
+	/* Load directly into the target segment. If loading fails, that memory may
+	 * be partial, so terminate the old task rather than letting it resume. */
+	target_buffers = *buffers;
+	target_buffers.memory_segment = task_segment;
+	status = task_restore(drive_no, first_lba, &target_buffers, state);
+	if(status != TASK_OK) {
+		(void)task_terminate(task_id);
+		return status;
+	}
 
-	/* The target is frozen outside a syscall, so its handles can be discarded
-	 * immediately before committing the new memory image. */
+	/* The target is frozen outside a syscall, so its old handles can be closed
+	 * before its restored context is made runnable. */
 	kfiles_close_task_files(task_id);
-	copy_words_between_segments(SEG_RESV_USER, task_segment, 0x8000);
 
-	/* task_restore built the context for the staging segment. Relocate the
-	 * saved data segments and return CS to the task's assigned segment. */
+	/* task_restore used the target segment for the new frame; make its segment
+	 * registers point there before the scheduler can resume the task. */
 	context = (mtsk16_context_isr_v1_t __far *)mk_farptr(task_segment,
 	                                                    state->resume_sp);
 	context->es = task_segment;
@@ -315,7 +317,7 @@ task_status_t task_save(uint8_t drive_no, const char *filename,
 	if(state->console.row >= TASK_SCREEN_ROWS || state->console.col >= TASK_SCREEN_COLS ||
 	   state->console.saved_row >= TASK_SCREEN_ROWS || state->console.saved_col >= TASK_SCREEN_COLS ||
 	   state->console.input_length > MTSK16_CONSOLE_INPUT_SIZE ||
-	   state->console.wrap > 1 || state->console.caps_lock > 1 ||
+	   state->console.cursor_visible > 1 || state->console.wrap > 1 || state->console.caps_lock > 1 ||
 	   state->console.num_lock > 1 || state->console.ansi_state > 3 ||
 	   state->console.param_index >= MTSK16_CONSOLE_ANSI_PARAMS) return TASK_ERR_BAD_HEADER;
 	for(uint8_t i = 0; i < MTSK16_CONSOLE_ANSI_PARAMS; i++)
@@ -372,13 +374,14 @@ task_status_t task_save(uint8_t drive_no, const char *filename,
 	header->memory_last_block_bytes = MTSK16_MEMORY_LAST_BLOCK_BYTES;
 	header->memory_decoded_blocks = MTSK16_MEMORY_BLOCKS;
 	header->resume_sp = state->resume_sp;
-	header->console_state_format = MTSK16_CONSOLE_STATE_V1;
-	header->console_state_size = sizeof(mtsk16_console_state_v1_t);
+	header->console_state_format = MTSK16_CONSOLE_STATE_V2;
+	header->console_state_size = sizeof(mtsk16_console_state_v2_t);
 	header->console.row = state->console.row;
 	header->console.col = state->console.col;
 	header->console.saved_row = state->console.saved_row;
 	header->console.saved_col = state->console.saved_col;
 	header->console.attribute = state->console.attribute;
+	header->console.cursor_visible = state->console.cursor_visible;
 	header->console.wrap = state->console.wrap;
 	header->console.caps_lock = state->console.caps_lock;
 	header->console.num_lock = state->console.num_lock;

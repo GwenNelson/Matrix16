@@ -23,9 +23,11 @@ start:
 	jmp .hang
 
 message:
-    db "Hello from Matrix16!",10,0
+	db 0x1b,"[?25l"
+	db "Hello from Matrix16!",10,0
 message_end:
 
 console_message:
-    db "Try Ctrl-Alt-F1 through Ctrl-Alt-F4 to switch consoles.",10,0
+	db "Try Ctrl-Alt-F1 through Ctrl-Alt-F4 to switch consoles.",10,10
+	db "You can also press ctrl-alt-S to open the save menu"
 console_message_end:

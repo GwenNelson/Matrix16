@@ -174,6 +174,7 @@ static void copy_console_state(kconsole_saved_state_t __far *destination,
 	destination->saved_row = source->saved_row;
 	destination->saved_col = source->saved_col;
 	destination->attribute = source->attribute;
+	destination->cursor_visible = source->cursor_visible;
 	destination->wrap = source->wrap;
 	destination->caps_lock = source->caps_lock;
 	destination->num_lock = source->num_lock;

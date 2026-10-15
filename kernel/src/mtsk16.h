@@ -41,16 +41,17 @@ enum {
 #define MTSK16_CONSOLE_ANSI_PARAMS 4
 
 enum {
-	MTSK16_CONSOLE_STATE_V1 = 1
+	MTSK16_CONSOLE_STATE_V2 = 2
 };
 
 /* Stable on-disk representation of the logical per-console state. */
-typedef struct __attribute__((packed)) mtsk16_console_state_v1_t {
+typedef struct __attribute__((packed)) mtsk16_console_state_v2_t {
 	uint8_t row;
 	uint8_t col;
 	uint8_t saved_row;
 	uint8_t saved_col;
 	uint8_t attribute;
+	uint8_t cursor_visible;
 	uint8_t wrap;
 	uint8_t caps_lock;
 	uint8_t num_lock;
@@ -59,7 +60,7 @@ typedef struct __attribute__((packed)) mtsk16_console_state_v1_t {
 	uint16_t params[MTSK16_CONSOLE_ANSI_PARAMS];
 	uint16_t input_length;
 	char input[MTSK16_CONSOLE_INPUT_SIZE];
-} mtsk16_console_state_v1_t;
+} mtsk16_console_state_v2_t;
 
 /*
  * The first block of every task file. Block numbers in this structure are
@@ -83,8 +84,8 @@ typedef struct __attribute__((packed)) mtsk16_header_t {
 	uint16_t resume_sp;
 	uint16_t console_state_format;
 	uint16_t console_state_size;
-	mtsk16_console_state_v1_t console;
-	uint8_t reserved[198];
+	mtsk16_console_state_v2_t console;
+	uint8_t reserved[197];
 } mtsk16_header_t;
 
 /*

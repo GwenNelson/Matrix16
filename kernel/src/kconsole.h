@@ -23,6 +23,7 @@ typedef struct kconsole_saved_state_t {
 	uint8_t saved_row;
 	uint8_t saved_col;
 	uint8_t attribute;
+	uint8_t cursor_visible;
 	uint8_t wrap;
 	uint8_t caps_lock;
 	uint8_t num_lock;

@@ -40,6 +40,7 @@ static void copy_saved_console_state(kconsole_saved_state_t __far *destination,
 	destination->saved_row = source->saved_row;
 	destination->saved_col = source->saved_col;
 	destination->attribute = source->attribute;
+	destination->cursor_visible = source->cursor_visible;
 	destination->wrap = source->wrap;
 	destination->caps_lock = source->caps_lock;
 	destination->num_lock = source->num_lock;
@@ -100,6 +101,16 @@ static void restore_task_console(uint8_t console) {
 	/* The menu may have selected another BIOS text page. Put the task's page
 	 * back onscreen and refresh its cursor and keyboard-lock LEDs. */
 	kconsole_switchto(saved_active_console);
+}
+
+static void show_empty_task_console(uint8_t console, char *message) {
+	uint8_t __far *saved_vram =
+		(uint8_t __far *)mk_farptr(SEG_SYS, (uint16_t)kernel_vram_scratch);
+
+	for(uint16_t i = 0; i < MTSK16_VRAM_SIZE; i++) saved_vram[i] = 0;
+	kconsole_init(console);
+	kconsole_puts(console, message);
+	menu_task_changed = true;
 }
 
 void savemenu_run(kthread_id_t task_id, uint16_t task_segment, uint8_t console,
@@ -328,10 +339,9 @@ void savemenu_replacetask(kthread_id_t task_id,uint16_t task_segment,uint8_t con
 	task_status = task_replace(task_id, drive_num, first_lba, task_segment,
 	                           console, &buffers, state);
 	if(task_status != TASK_OK) {
-		kconsole_puts(console,"Could not load task (error ");
-		kconsole_putuint(console, task_status);
-		kconsole_puts(console,")\r\n");
-		goto failed;
+		show_empty_task_console(console,
+			"Task load failed; slot terminated. Press Ctrl-Alt-S for menu.");
+		return;
 	}
 
 	/* Install the replacement's saved screen only after its memory and thread
@@ -353,9 +363,6 @@ failed:
 }
 
 void savemenu_terminatetask(kthread_id_t task_id, uint16_t task_segment, uint8_t console) {
-	uint8_t __far *saved_vram =
-		(uint8_t __far *)mk_farptr(SEG_SYS, (uint16_t)kernel_vram_scratch);
-
 	(void)task_segment;
 	if(!task_terminate(task_id)) {
 		kconsole_puts(console,"Task slot is already empty\r\n");
@@ -365,10 +372,8 @@ void savemenu_terminatetask(kthread_id_t task_id, uint16_t task_segment, uint8_t
 	}
 
 	/* Do not let savemenu_run restore the terminated task's old display. */
-	for(uint16_t i = 0; i < MTSK16_VRAM_SIZE; i++) saved_vram[i] = 0;
-	kconsole_init(console);
-	kconsole_puts(console,"Task terminated, press ctrl-alt-S for menu");
-	menu_task_changed = true;
+	show_empty_task_console(console,
+		"Task terminated, press Ctrl-Alt-S for menu.");
 }
 
 void savemenu_entry(kthread_id_t task_id, uint16_t task_segment, uint8_t console) {
