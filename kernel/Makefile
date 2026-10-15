@@ -30,7 +30,7 @@ $(BUILD)/switchto.o: $(SRC)/switchto.asm | $(BUILD)
 $(BUILD)/waitkey.o: $(SRC)/waitkey.asm | $(BUILD)
 	$(NASM) -f elf $< -o $@
 
-$(BUILD)/kmain.o: $(SRC)/kmain.c $(SRC)/bioscons.h $(SRC)/biosdisk.h $(SRC)/isr.h $(SRC)/kfiles.h $(SRC)/kpanic.h $(SRC)/matfs16.h $(SRC)/mtsk16.h $(SRC)/parsecfg.h ../common/libc/include/string.h $(SRC)/utils.h | $(BUILD)
+$(BUILD)/kmain.o: $(SRC)/kmain.c $(SRC)/bioscons.h $(SRC)/biosdisk.h $(SRC)/isr.h $(SRC)/kfiles.h $(SRC)/kpanic.h $(SRC)/matfs16.h $(SRC)/mtsk16.h $(SRC)/parsecfg.h $(SRC)/kmemmap.h ../common/libc/include/string.h $(SRC)/utils.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/kmain.c -o $@
 
 $(BUILD)/parsecfg.o: $(SRC)/parsecfg.c $(SRC)/parsecfg.h $(SRC)/bioscons.h $(SRC)/kfiles.h $(SRC)/matfs16.h ../common/libc/include/string.h | $(BUILD)
@@ -63,7 +63,7 @@ $(BUILD)/task.o: $(SRC)/task.c $(SRC)/task.h $(SRC)/mtsk16.h $(SRC)/matfs16.h $(
 $(BUILD)/kconsole.o: $(SRC)/kconsole.c $(SRC)/kconsole.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/kconsole.c -o $@
 
-$(BUILD)/kthread.o: $(SRC)/kthread.c $(SRC)/kthread.h $(SRC)/utils.h | $(BUILD)
+$(BUILD)/kthread.o: $(SRC)/kthread.c $(SRC)/kthread.h $(SRC)/kmemmap.h $(SRC)/utils.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/kthread.c -o $@
 
 $(BUILD)/savemenu.o: $(SRC)/savemenu.c $(SRC)/savemenu.h $(SRC)/kthread.h $(SRC)/kconsole.h $(SRC)/mtsk16.h $(SRC)/matfs16.h $(SRC)/task.h $(SRC)/kmemmap.h $(SRC)/kfiles.h $(SRC)/utils.h | $(BUILD)

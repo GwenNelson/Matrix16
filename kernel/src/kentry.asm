@@ -5,6 +5,10 @@ BITS 16
 extern kernel_main
 extern __bss_start
 extern __bss_end
+extern __aux_bss_start
+extern __aux_bss_end
+extern SEG_SYS
+extern SEG_KERN
 extern kernel_stack_top
 
 global kernel_start
@@ -19,13 +23,24 @@ kernel_start:
 	mov ss, ax
 	mov sp, kernel_stack_top
 
-	; The loader copies the file image, not the zero-filled .bss section.
-	; DS and ES already address SEG_KERN; clear it before entering C.
+	; Auxiliary BSS has offsets within SEG_SYS and no bytes in the loaded
+	; kernel image. Clear it through ES before returning ES to SEG_KERN.
+	mov ax, SEG_SYS
+	mov es, ax
+	mov di, __aux_bss_start
+	mov cx, __aux_bss_end
+	sub cx, di
+	cld
+	rep stosb
+
+	; The loader also omits ordinary BSS. DS still addresses SEG_KERN, and ES
+	; must be restored to SEG_KERN before clearing it and entering kernel C.
+	mov ax, SEG_KERN
+	mov es, ax
 	xor ax, ax
 	mov di, __bss_start
 	mov cx, __bss_end
 	sub cx, di
-	cld
 	rep stosb
 
 	call kernel_main

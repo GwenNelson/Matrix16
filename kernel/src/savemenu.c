@@ -30,6 +30,7 @@ static bool save_task_console(uint8_t console) {
 	uint16_t flags = disable_interrupts();
 	uint16_t vram_segment = kconsole_vram_segment(console);
 	volatile uint16_t __far *vram;
+	uint16_t __far *scratch;
 
 	if(vram_segment == VRAM_SEG_INVALID ||
 	   !kconsole_save_state(console, &saved_console_state)) {
@@ -39,8 +40,9 @@ static bool save_task_console(uint8_t console) {
 
 	saved_active_console = kconsole_active_console();
 	vram = (volatile uint16_t __far *)mk_farptr(vram_segment, 0);
+	scratch = (uint16_t __far *)mk_farptr(SEG_SYS, (uint16_t)kernel_vram_scratch);
 	for(uint16_t i = 0; i < MTSK16_VRAM_SIZE / sizeof(uint16_t); i++)
-		((uint16_t*)kernel_vram_scratch)[i] = vram[i];
+		scratch[i] = vram[i];
 
 	restore_interrupts(flags);
 	return true;
@@ -51,9 +53,11 @@ static void restore_task_console(uint8_t console) {
 	uint16_t vram_segment = kconsole_vram_segment(console);
 	volatile uint16_t __far *vram =
 		(volatile uint16_t __far *)mk_farptr(vram_segment, 0);
+	uint16_t __far *scratch =
+		(uint16_t __far *)mk_farptr(SEG_SYS, (uint16_t)kernel_vram_scratch);
 
 	for(uint16_t i = 0; i < MTSK16_VRAM_SIZE / sizeof(uint16_t); i++)
-		vram[i] = ((uint16_t*)kernel_vram_scratch)[i];
+		vram[i] = scratch[i];
 	(void)kconsole_restore_state(console, &saved_console_state);
 	restore_interrupts(flags);
 
@@ -80,7 +84,7 @@ void savemenu_savetask(kthread_id_t task_id, uint16_t task_segment, uint8_t cons
 	}
 
 	buffers.memory_segment = task_segment;
-	buffers.vram.segment = SEG_KERN;
+	buffers.vram.segment = SEG_SYS;
 	buffers.vram.offset = (uint16_t)kernel_vram_scratch;
 	buffers.scratch.segment = SEG_KERN;
 	buffers.scratch.offset = (uint16_t)task_save_scratch;
