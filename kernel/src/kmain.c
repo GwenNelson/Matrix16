@@ -30,6 +30,11 @@ void k_timer_callback(registers_t *regs) {
 	timer_ticks++;
 	if(regs->cs != SEG_KERN) {
 		kthread_id_t current = kthread_cur_thread();
+		uint16_t task_segment;
+		if(kthread_task_info(current, &task_segment, 0) &&
+		   regs->cs == task_segment &&
+		   kthread_is_pending_termination(current))
+			task_terminate_current();
 		if(current >= KTHREAD_USER_TSK0_ID && current <= KTHREAD_USER_TSK3_ID &&
 		   kthread_is_pending_save_menu(current)) {
 			if(kthread_handoff_save_menu(current, (uint16_t *)regs)) return;

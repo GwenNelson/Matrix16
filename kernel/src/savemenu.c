@@ -6,6 +6,7 @@
 #include "kmemmap.h"
 #include "matfs16.h"
 #include "task.h"
+#include "kaux.h"
 
 extern uint8_t kernel_vram_scratch[MTSK16_VRAM_SIZE];
 
@@ -133,6 +134,11 @@ void savemenu_savetask(kthread_id_t task_id, uint16_t task_segment, uint8_t cons
 
 	if(!kthread_task_is_active(task_id)) {
 		kconsole_puts(console,"Can not save - task slot is empty\r\n");
+		goto finish;
+	}
+
+	if(kaux_user_claimed_by(task_id)) {
+		kconsole_puts(console,"Can not save - task has claimed the auxiliary segment\r\n");
 		goto finish;
 	}
 

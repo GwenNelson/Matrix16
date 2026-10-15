@@ -4,6 +4,9 @@ LD = ia16-elf-ld
 OBJCOPY = ia16-elf-objcopy
 CMD_MAX_SIZE = 28672
 CFLAGS = -march=i8088 -Os -ffreestanding -ffixed-ds -ffixed-es -ffunction-sections -fdata-sections -I../../include -I../../common/libc/include -I../libc/include
+# This translation unit triggers an IA16 GCC ICE when both segment registers
+# are fixed. Keep DS fixed for near data; the compiler saves ES around far accesses.
+EDIT_CFLAGS = $(filter-out -ffixed-es,$(CFLAGS))
 LDFLAGS = --gc-sections
 
 .DELETE_ON_ERROR:
@@ -15,7 +18,7 @@ COMMON_LIBC_INPUTS = ../../common/libc/Makefile ../../common/libc/src/string.c .
 USER_LIBC = ../libc/build/libm16c-user.a
 USER_LIBC_INPUTS = ../libc/Makefile ../libc/src/printf.c ../libc/src/syscalls.c ../libc/include/stdio.h ../libc/include/syscalls.h ../../include/syscalls.inc
 
-all: $(BUILD)/CLS.CMD $(BUILD)/TYPE.CMD $(BUILD)/DIR.CMD $(BUILD)/SET.CMD $(BUILD)/HELP.CMD $(BUILD)/FORMAT.CMD $(BUILD)/CREATEFILE.CMD $(BUILD)/COPY.CMD $(BUILD)/COPYSYS.CMD $(BUILD)/DEL.CMD $(BUILD)/MORE.CMD $(BUILD)/REN.CMD $(BUILD)/DISKUSAGE.CMD
+all: $(BUILD)/CLS.CMD $(BUILD)/TYPE.CMD $(BUILD)/DIR.CMD $(BUILD)/SET.CMD $(BUILD)/HELP.CMD $(BUILD)/FORMAT.CMD $(BUILD)/CREATEFILE.CMD $(BUILD)/COPY.CMD $(BUILD)/COPYSYS.CMD $(BUILD)/DEL.CMD $(BUILD)/MORE.CMD $(BUILD)/REN.CMD $(BUILD)/DISKUSAGE.CMD $(BUILD)/TERMINATE.CMD $(BUILD)/EXEC.CMD $(BUILD)/EDIT.CMD
 
 $(BUILD):
 	mkdir -p $@
@@ -57,6 +60,9 @@ $(BUILD)/copysys_entry.o: $(SRC)/copysys_entry.asm | $(BUILD)
 $(BUILD)/diskusage_entry.o: $(SRC)/diskusage_entry.asm | $(BUILD)
 	$(NASM) -f elf $< -o $@
 
+$(BUILD)/edit_entry.o: $(SRC)/edit_entry.asm | $(BUILD)
+	$(NASM) -f elf $< -o $@
+
 $(BUILD)/format.o: $(SRC)/format.c ../libc/include/stdio.h ../libc/include/syscalls.h ../../include/syscalls.inc | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -68,6 +74,9 @@ $(BUILD)/copysys.o: $(SRC)/copysys.c ../libc/include/stdio.h ../libc/include/sys
 
 $(BUILD)/diskusage.o: $(SRC)/diskusage.c ../libc/include/stdio.h ../libc/include/syscalls.h ../../include/syscalls.inc | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/edit.o: $(SRC)/edit.c ../libc/include/stdio.h ../libc/include/syscalls.h ../../include/syscalls.inc | $(BUILD)
+	$(CC) $(EDIT_CFLAGS) -c $< -o $@
 
 $(COMMON_LIBC): $(COMMON_LIBC_INPUTS)
 	$(MAKE) -C ../../common/libc/
@@ -87,6 +96,9 @@ $(BUILD)/copysys.elf: $(BUILD)/copysys_entry.o $(BUILD)/copysys.o $(USER_LIBC) $
 $(BUILD)/diskusage.elf: $(BUILD)/diskusage_entry.o $(BUILD)/diskusage.o $(USER_LIBC) $(COMMON_LIBC) $(SRC)/diskusage.ld
 	$(LD) $(LDFLAGS) -Map $(BUILD)/diskusage.map -T $(SRC)/diskusage.ld -o $@ $(filter-out $(SRC)/diskusage.ld,$^)
 
+$(BUILD)/edit.elf: $(BUILD)/edit_entry.o $(BUILD)/edit.o $(USER_LIBC) $(SRC)/edit.ld
+	$(LD) $(LDFLAGS) -Map $(BUILD)/edit.map -T $(SRC)/edit.ld -o $@ $(filter-out $(SRC)/edit.ld,$^)
+
 $(BUILD)/FORMAT.CMD: $(BUILD)/format.elf
 	$(OBJCOPY) -O binary $< $@
 	@test "$$(wc -c < $@)" -le $(CMD_MAX_SIZE) || \
@@ -103,6 +115,11 @@ $(BUILD)/COPYSYS.CMD: $(BUILD)/copysys.elf
 		{ echo "$@ exceeds the 8000h-EFFFh command region"; false; }
 
 $(BUILD)/DISKUSAGE.CMD: $(BUILD)/diskusage.elf
+	$(OBJCOPY) -O binary $< $@
+	@test "$$(wc -c < $@)" -le $(CMD_MAX_SIZE) || \
+		{ echo "$@ exceeds the 8000h-EFFFh command region"; false; }
+
+$(BUILD)/EDIT.CMD: $(BUILD)/edit.elf
 	$(OBJCOPY) -O binary $< $@
 	@test "$$(wc -c < $@)" -le $(CMD_MAX_SIZE) || \
 		{ echo "$@ exceeds the 8000h-EFFFh command region"; false; }
@@ -127,7 +144,17 @@ $(BUILD)/REN.CMD: $(SRC)/ren.asm | $(BUILD)
 	@test "$$(wc -c < $@)" -le $(CMD_MAX_SIZE) || \
 		{ echo "$@ exceeds the 8000h-EFFFh command region"; false; }
 
+$(BUILD)/TERMINATE.CMD: $(SRC)/terminate.asm | $(BUILD)
+	$(NASM) -f bin $< -o $@
+	@test "$$(wc -c < $@)" -le $(CMD_MAX_SIZE) || \
+		{ echo "$@ exceeds the 8000h-EFFFh command region"; false; }
+
+$(BUILD)/EXEC.CMD: $(SRC)/exec.asm | $(BUILD)
+	$(NASM) -f bin $< -o $@
+	@test "$$(wc -c < $@)" -le $(CMD_MAX_SIZE) || \
+		{ echo "$@ exceeds the 8000h-EFFFh command region"; false; }
+
 clean:
-	rm -f $(BUILD)/CLS.CMD $(BUILD)/TYPE.CMD $(BUILD)/DIR.CMD $(BUILD)/SET.CMD $(BUILD)/HELP.CMD $(BUILD)/format_entry.o $(BUILD)/format.o $(BUILD)/format.elf $(BUILD)/format.map $(BUILD)/FORMAT.CMD $(BUILD)/createfile_entry.o $(BUILD)/createfile.o $(BUILD)/createfile.elf $(BUILD)/createfile.map $(BUILD)/CREATEFILE.CMD $(BUILD)/copysys_entry.o $(BUILD)/copysys.o $(BUILD)/copysys.elf $(BUILD)/copysys.map $(BUILD)/COPYSYS.CMD $(BUILD)/COPY.CMD $(BUILD)/DEL.CMD $(BUILD)/MORE.CMD $(BUILD)/REN.CMD $(BUILD)/diskusage_entry.o $(BUILD)/diskusage.o $(BUILD)/diskusage.elf $(BUILD)/diskusage.map $(BUILD)/DISKUSAGE.CMD
+	rm -f $(BUILD)/CLS.CMD $(BUILD)/TYPE.CMD $(BUILD)/DIR.CMD $(BUILD)/SET.CMD $(BUILD)/HELP.CMD $(BUILD)/format_entry.o $(BUILD)/format.o $(BUILD)/format.elf $(BUILD)/format.map $(BUILD)/FORMAT.CMD $(BUILD)/createfile_entry.o $(BUILD)/createfile.o $(BUILD)/createfile.elf $(BUILD)/createfile.map $(BUILD)/CREATEFILE.CMD $(BUILD)/copysys_entry.o $(BUILD)/copysys.o $(BUILD)/copysys.elf $(BUILD)/copysys.map $(BUILD)/COPYSYS.CMD $(BUILD)/COPY.CMD $(BUILD)/DEL.CMD $(BUILD)/MORE.CMD $(BUILD)/REN.CMD $(BUILD)/diskusage_entry.o $(BUILD)/diskusage.o $(BUILD)/diskusage.elf $(BUILD)/diskusage.map $(BUILD)/DISKUSAGE.CMD $(BUILD)/TERMINATE.CMD $(BUILD)/EXEC.CMD $(BUILD)/edit_entry.o $(BUILD)/edit.o $(BUILD)/edit.elf $(BUILD)/edit.map $(BUILD)/EDIT.CMD
 
 .PHONY: all clean

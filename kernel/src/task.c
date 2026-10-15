@@ -2,6 +2,7 @@
 #include <stdint.h>
 
 #include "bioscons.h"
+#include "kaux.h"
 #include "kfiles.h"
 #include "kthread.h"
 #include "kmemmap.h"
@@ -150,9 +151,9 @@ static task_status_t load_task_chain_blocks(uint8_t drive_no, uint16_t *previous
 	return TASK_OK;
 }
 
-task_status_t task_restore(uint8_t drive_no, uint16_t first_lba,
-	                       const task_buffers_t *buffers,
-	                       task_state_t __far *state) {
+static task_status_t task_restore_impl(uint8_t drive_no, uint16_t first_lba,
+	                                   const task_buffers_t *buffers,
+	                                   task_state_t __far *state) {
 	matfs16_status_t matfs_status;
 	task_status_t status;
 	uint16_t current_lba;
@@ -238,6 +239,27 @@ task_status_t task_restore(uint8_t drive_no, uint16_t first_lba,
 	return TASK_OK;
 }
 
+task_status_t task_restore(uint8_t drive_no, uint16_t first_lba,
+	                       const task_buffers_t *buffers,
+	                       task_state_t __far *state) {
+	kthread_id_t caller = kthread_cur_thread();
+	task_status_t status;
+
+	if(!kaux_claim_kernel(caller)) return TASK_ERR_AUX_BUSY;
+	status = task_restore_impl(drive_no, first_lba, buffers, state);
+	kaux_release_kernel(caller);
+	return status;
+}
+
+task_status_t task_restore_claimed(uint8_t drive_no, uint16_t first_lba,
+	                               const task_buffers_t *buffers,
+	                               task_state_t __far *state) {
+	kthread_id_t caller = kthread_cur_thread();
+
+	if(!kaux_kernel_claimed_by(caller)) return TASK_ERR_AUX_BUSY;
+	return task_restore_impl(drive_no, first_lba, buffers, state);
+}
+
 static bool task_segment_matches_id(kthread_id_t task_id, uint16_t segment) {
 	if(task_id == KTHREAD_USER_TSK0_ID) return segment == SEG_USER0;
 	if(task_id == KTHREAD_USER_TSK1_ID) return segment == SEG_USER1;
@@ -258,12 +280,14 @@ task_status_t task_replace(kthread_id_t task_id, uint8_t drive_no,
 	   task_id == kthread_cur_thread() ||
 	   !task_segment_matches_id(task_id, task_segment))
 		return TASK_ERR_INVALID_ARGUMENT;
+	if(!kaux_claim_kernel(kthread_cur_thread())) return TASK_ERR_AUX_BUSY;
 
 	/* Load directly into the target segment. If loading fails, that memory may
 	 * be partial, so terminate the old task rather than letting it resume. */
 	target_buffers = *buffers;
 	target_buffers.memory_segment = task_segment;
-	status = task_restore(drive_no, first_lba, &target_buffers, state);
+	status = task_restore_impl(drive_no, first_lba, &target_buffers, state);
+	kaux_release_kernel(kthread_cur_thread());
 	if(status != TASK_OK) {
 		(void)task_terminate(task_id);
 		return status;
@@ -295,6 +319,15 @@ bool task_terminate(kthread_id_t task_id) {
 	return true;
 }
 
+void task_terminate_current(void) {
+	kthread_id_t task_id = kthread_cur_thread();
+	if(task_id < KTHREAD_USER_TSK0_ID || task_id > KTHREAD_USER_TSK3_ID) {
+		for(;;) __asm__ volatile ("hlt");
+	}
+	kfiles_close_task_files(task_id);
+	kthread_exit_current();
+}
+
 task_status_t task_save(uint8_t drive_no, const char *filename,
 	                    const task_buffers_t *buffers,
 	                    const task_state_t __far *state) {
@@ -307,10 +340,15 @@ task_status_t task_save(uint8_t drive_no, const char *filename,
 	uint8_t __far *scratch;
 	uint16_t block_index;
 	uint16_t offset;
+	kthread_id_t task_id;
 
 	if(filename == 0 || buffers == 0 || state == 0 || drive_no > 1) return TASK_ERR_INVALID_ARGUMENT;
 	if(buffers->memory_segment == SEG_KERN || buffers->scratch.offset > 0xFE00 ||
 	   buffers->vram.offset > 0xF000) return TASK_ERR_INVALID_ARGUMENT;
+	for(task_id = KTHREAD_USER_TSK0_ID; task_id <= KTHREAD_USER_TSK3_ID; task_id++) {
+		if(task_segment_matches_id(task_id, buffers->memory_segment) &&
+		   kaux_user_claimed_by(task_id)) return TASK_ERR_AUX_BUSY;
+	}
 	if((state->resume_sp & 1) != 0 || state->resume_sp > MTSK16_MAX_RESUME_SP) return TASK_ERR_INVALID_CONTEXT;
 	if(state->screen_mode != MTSK16_SCREEN_TEXT_80X25_COLOR ||
 	   state->vram_size != MTSK16_VRAM_SIZE) return TASK_ERR_INVALID_ARGUMENT;

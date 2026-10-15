@@ -13,6 +13,16 @@
 #define SYS_COPY 11
 #define SYS_RENAME 12
 #define SYS_GET_FREE_BLOCKS 13
+#define SYS_EXEC 14
+#define SYS_TERM 15
+#define SYS_CLAIM_AUX 16
+#define SYS_RELEASE_AUX 17
+
+/* AUX calls take no arguments; AX returns 0 on success and 1 on failure. */
+/* SYS_EXEC takes DS:BX=filename and CX=target. SYS_TERM takes BX=target. */
+/* Targets are slots 0-3, or SYSCALL_TASK_SELF; slot 4 is reserved. */
+#define SYSCALL_TASK_SELF 0x00FF
+#define SYSCALL_TASK_SLOT_COUNT 4
 
 #define SYSCALL_CONSOLE_INVALID 0xFFFF
 #define SYSCALL_INVALID_HANDLE  0xFFFF

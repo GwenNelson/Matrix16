@@ -157,3 +157,55 @@ uint16_t sys_read_block(uint8_t drive_no, uint16_t lba, void* buffer) {
 
 	return ax;
 }
+
+uint16_t sys_exec(const char* filename, uint8_t target) {
+	uint16_t ax = SYS_EXEC;
+
+	__asm__ volatile (
+		"int $0x80"
+		: "+a" (ax)
+		: "b" ((uint16_t)filename), "c" ((uint16_t)target)
+		: "memory", "cc"
+	);
+
+	return ax;
+}
+
+uint16_t sys_term(uint8_t target) {
+	uint16_t ax = SYS_TERM;
+
+	__asm__ volatile (
+		"int $0x80"
+		: "+a" (ax)
+		: "b" ((uint16_t)target)
+		: "memory", "cc"
+	);
+
+	return ax;
+}
+
+uint16_t sys_claim_aux(void) {
+	uint16_t ax = SYS_CLAIM_AUX;
+
+	__asm__ volatile (
+		"int $0x80"
+		: "+a" (ax)
+		:
+		: "memory", "cc"
+	);
+
+	return ax;
+}
+
+uint16_t sys_release_aux(void) {
+	uint16_t ax = SYS_RELEASE_AUX;
+
+	__asm__ volatile (
+		"int $0x80"
+		: "+a" (ax)
+		:
+		: "memory", "cc"
+	);
+
+	return ax;
+}

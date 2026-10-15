@@ -21,6 +21,7 @@ typedef enum task_status_t {
 	TASK_ERR_UNSUPPORTED_ENCODING,
 	TASK_ERR_INVALID_CONTEXT,
 	TASK_ERR_BAD_COMPRESSION,
+	TASK_ERR_AUX_BUSY,
 	TASK_ERR_NO_SPACE,
 	TASK_ERR_NOT_IMPLEMENTED
 } task_status_t;
@@ -57,6 +58,11 @@ task_status_t task_restore(uint8_t drive_no, uint16_t first_lba,
 	                       const task_buffers_t *buffers,
 	                       task_state_t __far *state);
 
+/* Restore while the current caller already holds the kernel SEG_AUX claim. */
+task_status_t task_restore_claimed(uint8_t drive_no, uint16_t first_lba,
+	                               const task_buffers_t *buffers,
+	                               task_state_t __far *state);
+
 /* Replace a suspended user task from a TSK file, loading directly into its
  * assigned segment. On success its restored frame replaces the old one and
  * its open file handles are closed. If loading fails, the old task is
@@ -69,6 +75,8 @@ task_status_t task_replace(kthread_id_t task_id, uint8_t drive_no,
 
 /* End a suspended user task and close all of its open file handles. */
 bool task_terminate(kthread_id_t task_id);
+/* Finish terminating the current user task and schedule another task. */
+void task_terminate_current(void) __attribute__((noreturn));
 
 /* Save a suspended user task as a raw-memory TSK v1 file. The named file is
  * replaced, and the task's user frame is copied from memory_segment:resume_sp.

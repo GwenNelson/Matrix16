@@ -3,9 +3,104 @@
 #include "ksyscall.h"
 #include "kthread.h"
 #include "kconsole.h"
+#include "kaux.h"
 #include "kfiles.h"
+#include "kmemmap.h"
 #include "matfs16.h"
+#include "mtsk16.h"
+#include "task.h"
 #include "utils.h"
+
+static uint8_t task_exec_scratch[MATFS16_BLOCK_SIZE] SEG_SYS_BSS;
+static task_state_t task_exec_state SEG_SYS_BSS;
+static volatile uint8_t task_exec_lock;
+
+static task_state_t __far *task_exec_state_ptr(void) {
+	return (task_state_t __far *)mk_farptr(SEG_SYS, (uint16_t)&task_exec_state);
+}
+
+static bool acquire_task_exec_lock(kthread_id_t caller) {
+	for(;;) {
+		uint16_t flags;
+		kthread_critical_enter(flags);
+		if(!task_exec_lock) {
+			task_exec_lock = 1;
+			kthread_critical_exit(flags);
+			return true;
+		}
+		kthread_critical_exit(flags);
+		if(kthread_is_pending_termination(caller)) return false;
+		kthread_yield();
+	}
+}
+
+static void release_task_exec_lock(void) {
+	uint16_t flags;
+	kthread_critical_enter(flags);
+	task_exec_lock = 0;
+	kthread_critical_exit(flags);
+}
+
+static bool copy_task_path(registers_t *regs, char *filename, uint8_t *drive_no) {
+	char __far *path = mk_farptr(regs->ds, regs->bx);
+	uint16_t i;
+
+	if(path[0] == 'A') *drive_no = 0;
+	else if(path[0] == 'B') *drive_no = 1;
+	else return false;
+	if(path[1] != ':') return false;
+
+	for(i = 0; i < MATFS16_FILENAME_MAXLEN; i++) {
+		filename[i] = path[i + 2];
+		if(filename[i] == '\0') break;
+	}
+	return i < MATFS16_FILENAME_MAXLEN && filename[0] != '\0';
+}
+
+static bool resolve_task_target(uint16_t selector, kthread_id_t caller,
+	                            kthread_id_t *target, bool *is_self,
+	                            uint16_t *segment, uint8_t *console) {
+	if(selector == SYSCALL_TASK_SELF) *target = caller;
+	else if(selector < SYSCALL_TASK_SLOT_COUNT)
+		*target = KTHREAD_USER_TSK0_ID + (kthread_id_t)selector;
+	else return false;
+
+	if(*target < KTHREAD_USER_TSK0_ID || *target > KTHREAD_USER_TSK3_ID)
+		return false;
+	if(!kthread_task_info(*target, segment, console) || *console >= 4)
+		return false;
+	*is_self = *target == caller;
+	return true;
+}
+
+static bool wait_for_task_exit(kthread_id_t target, kthread_id_t caller) {
+	if(!kthread_task_is_active(target)) {
+		kfiles_close_task_files(target);
+		return true;
+	}
+
+	kthread_set_pending_termination(target, true);
+	while(kthread_task_is_active(target)) {
+		if(kthread_is_pending_termination(caller)) return false;
+		kthread_yield();
+	}
+	kfiles_close_task_files(target);
+	return true;
+}
+
+static void show_terminated_task(uint8_t console, char *message) {
+	kconsole_init(console);
+	kconsole_puts(console, message);
+}
+
+static void fail_exec_target(kthread_id_t target, bool is_self, uint8_t console) {
+	if(is_self) {
+		show_terminated_task(console, "Task could not be loaded; slot terminated.\r\n");
+		task_terminate_current();
+	}
+	(void)wait_for_task_exit(target, kthread_cur_thread());
+	show_terminated_task(console, "Task could not be loaded; slot empty.\r\n");
+}
 
 static void k_syscall_sys_write(registers_t *regs) {
 	uint8_t console;
@@ -68,6 +163,10 @@ static void k_syscall_sys_read(registers_t *regs) {
 
 	while(kconsole_input_available(console) == 0) {
 		kthread_yield();
+		if(kthread_is_pending_termination(kthread_cur_thread())) {
+			regs->ax = 0;
+			return;
+		}
 		if(kthread_is_pending_save_menu(kthread_cur_thread())) {
 			regs->ax = 0;
 			return;
@@ -328,6 +427,139 @@ static void k_syscall_sys_read_block(registers_t* regs) {
 	regs->ax = (status == MATFS16_OK) ? 0 : 1;
 }
 
+/* DS:BX names a TSK file; CX selects slot 0-3 or SYSCALL_TASK_SELF. */
+static void k_syscall_sys_exec(registers_t *regs) {
+	char filename[MATFS16_FILENAME_MAXLEN];
+	uint8_t drive_no;
+	uint8_t console;
+	uint16_t segment;
+	uint16_t first_lba;
+	uint16_t file_length;
+	uint16_t vram_segment;
+	uint16_t i;
+	kthread_id_t caller = kthread_cur_thread();
+	kthread_id_t target;
+	bool is_self;
+	matfs16_status_t fs_status;
+	task_status_t task_status;
+	task_buffers_t buffers;
+	task_state_t __far *state = task_exec_state_ptr();
+
+	regs->ax = 1;
+	if(!copy_task_path(regs, filename, &drive_no) ||
+	   !resolve_task_target(regs->cx, caller, &target, &is_self,
+	                        &segment, &console)) return;
+	vram_segment = kconsole_vram_segment(console);
+	if(vram_segment == VRAM_SEG_INVALID) return;
+
+	/* A missing file leaves the old task alone. Other lookup errors terminate
+	 * the target because its requested execution could not be completed safely. */
+	fs_status = matfs16_cache_blockchain(drive_no);
+	if(fs_status != MATFS16_OK) {
+		fail_exec_target(target, is_self, console);
+		return;
+	}
+	fs_status = matfs16_locate_file(filename, drive_no, &first_lba, &file_length);
+	(void)file_length;
+	if(fs_status == MATFS16_ERR_NOT_FOUND) return;
+	if(fs_status != MATFS16_OK) {
+		fail_exec_target(target, is_self, console);
+		return;
+	}
+	/* Reserve AUX before stopping or overwriting the target task. */
+	if(!kaux_claim_kernel(caller)) return;
+
+	/* Let an external target finish any active syscall before discarding its
+	 * kernel stack, so BIOS calls and file operations can release their locks. */
+	if(!is_self && !wait_for_task_exit(target, caller)) {
+		kaux_release_kernel(caller);
+		return;
+	}
+	if(!acquire_task_exec_lock(caller)) {
+		kaux_release_kernel(caller);
+		return;
+	}
+
+	/* A concurrent exec may have filled this slot while we waited for the
+	 * shared decompression state. Stop that new occupant before replacing it. */
+	if(!is_self && kthread_task_is_active(target) &&
+	   !wait_for_task_exit(target, caller)) {
+		release_task_exec_lock();
+		kaux_release_kernel(caller);
+		return;
+	}
+
+	fs_status = matfs16_cache_blockchain(drive_no);
+	if(fs_status != MATFS16_OK) {
+		release_task_exec_lock();
+		kaux_release_kernel(caller);
+		fail_exec_target(target, is_self, console);
+		return;
+	}
+
+	buffers.memory_segment = segment;
+	buffers.vram.segment = vram_segment;
+	buffers.vram.offset = 0;
+	buffers.scratch.segment = SEG_SYS;
+	buffers.scratch.offset = (uint16_t)task_exec_scratch;
+	task_status = task_restore_claimed(drive_no, first_lba, &buffers, state);
+	if(task_status != TASK_OK) {
+		release_task_exec_lock();
+		kaux_release_kernel(caller);
+		fail_exec_target(target, is_self, console);
+		return;
+	}
+
+	/* Restore the saved console before making a replacement slot runnable. */
+	(void)kconsole_restore_state(console, &state->console);
+	kfiles_close_task_files(target);
+	if(is_self) {
+		/* The syscall ISR owns a kernel-stack frame. Redirect its bridge to the
+		 * restored user frame so LEAVE_KERNEL returns to the new task entry. */
+		uint16_t __far *context = (uint16_t __far *)mk_farptr(segment,
+		                                                    state->resume_sp);
+		uint16_t *frame = (uint16_t *)regs;
+		uint16_t *bridge = frame + 13;
+		for(i = 0; i < 13; i++) frame[i] = context[i];
+		bridge[0] = state->resume_sp;
+		bridge[1] = segment;
+		kthread_set_pending_save_menu(target, false);
+	} else {
+		kthread_setup_restored(target, segment, state->resume_sp, console);
+		regs->ax = 0;
+	}
+	release_task_exec_lock();
+	kaux_release_kernel(caller);
+}
+
+/* BX selects slot 0-3 or SYSCALL_TASK_SELF. */
+static void k_syscall_sys_term(registers_t *regs) {
+	uint8_t console;
+	kthread_id_t caller = kthread_cur_thread();
+	kthread_id_t target;
+	bool is_self;
+
+	regs->ax = 1;
+	if(!resolve_task_target(regs->bx, caller, &target, &is_self,
+	                        0, &console)) return;
+	if(is_self) {
+		show_terminated_task(console, "Task terminated.\r\n");
+		task_terminate_current();
+	}
+	if(!kthread_task_is_active(target)) return;
+	if(!wait_for_task_exit(target, caller)) return;
+	show_terminated_task(console, "Task terminated.\r\n");
+	regs->ax = 0;
+}
+
+static void k_syscall_sys_claim_aux(registers_t *regs) {
+	regs->ax = kaux_claim_user(kthread_cur_thread()) ? 0 : 1;
+}
+
+static void k_syscall_sys_release_aux(registers_t *regs) {
+	regs->ax = kaux_release_user(kthread_cur_thread()) ? 0 : 1;
+}
+
 void k_syscall_callback(registers_t *regs) {
 	kthread_id_t thread = kthread_cur_thread();
 	if(thread < KTHREAD_USER_TSK0_ID || thread > KTHREAD_USER_RSV_ID) kpanic("Syscall from non-user thread!");
@@ -373,11 +605,25 @@ void k_syscall_callback(registers_t *regs) {
 		case SYS_READ_BLOCK:
 			k_syscall_sys_read_block(regs);
 		break;
+		case SYS_EXEC:
+			k_syscall_sys_exec(regs);
+		break;
+		case SYS_TERM:
+			k_syscall_sys_term(regs);
+		break;
+		case SYS_CLAIM_AUX:
+			k_syscall_sys_claim_aux(regs);
+		break;
+		case SYS_RELEASE_AUX:
+			k_syscall_sys_release_aux(regs);
+		break;
 		default:
 			kpanic("Unknown syscall");
 		break;
 	}
 	kthread_set_in_syscall(thread, false);
+	if(kthread_is_pending_termination(thread))
+		task_terminate_current();
 	if(kthread_is_pending_save_menu(thread))
 		kthread_handoff_save_menu(thread, (uint16_t *)regs);
 }

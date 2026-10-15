@@ -31,6 +31,7 @@ typedef struct kthread_t {
     uint8_t console;
     volatile bool pending_save_menu;
     volatile bool in_syscall;
+    volatile bool pending_termination;
 
 } kthread_t;
 
@@ -57,6 +58,12 @@ int kthread_setup(kthread_id_t id, uint16_t seg, kthread_entry_t entry, uint16_t
 int kthread_setup_restored(kthread_id_t id, uint16_t seg, uint16_t sp, uint8_t console);
 void kthread_set_task_slot(kthread_id_t id, uint16_t segment, uint8_t console);
 bool kthread_task_is_active(kthread_id_t id);
+/* Return the configured user segment and console for an existing task slot. */
+bool kthread_task_info(kthread_id_t id, uint16_t *segment, uint8_t *console);
+/* Request termination at the next safe user or syscall return point. */
+void kthread_set_pending_termination(kthread_id_t id, bool pending);
+bool kthread_is_pending_termination(kthread_id_t id);
+void kthread_exit_current(void) __attribute__((noreturn));
 
 void kthread_yield(void);
 

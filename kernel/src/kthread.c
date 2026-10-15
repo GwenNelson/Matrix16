@@ -3,6 +3,7 @@
 #include <stdint.h>
 
 #include "kthread.h"
+#include "kaux.h"
 #include "kmemmap.h"
 #include "kconsole.h"
 #include "savemenu.h"
@@ -119,11 +120,35 @@ void kthread_set_task_slot(kthread_id_t id, uint16_t segment, uint8_t console) {
 	threads[id].console = console;
 	threads[id].pending_save_menu = false;
 	threads[id].in_syscall = false;
+	threads[id].pending_termination = false;
 }
 
 bool kthread_task_is_active(kthread_id_t id) {
 	if(id < KTHREAD_USER_TSK0_ID || id > KTHREAD_USER_TSK3_ID) return false;
 	return threads[id].state != KTHREAD_UNUSED;
+}
+
+bool kthread_task_info(kthread_id_t id, uint16_t *segment, uint8_t *console) {
+	if(id < KTHREAD_USER_TSK0_ID || id > KTHREAD_USER_TSK3_ID ||
+	   threads[id].task_segment == 0) return false;
+	if(segment != 0) *segment = threads[id].task_segment;
+	if(console != 0) *console = threads[id].console;
+	return true;
+}
+
+void kthread_set_pending_termination(kthread_id_t id, bool pending) {
+	uint16_t irq_flags;
+	if(id < KTHREAD_USER_TSK0_ID || id > KTHREAD_USER_TSK3_ID) return;
+	kthread_critical_enter(irq_flags);
+	threads[id].pending_termination = pending;
+	if(pending && threads[id].state == KTHREAD_BLOCKED)
+		threads[id].state = KTHREAD_READY;
+	kthread_critical_exit(irq_flags);
+}
+
+bool kthread_is_pending_termination(kthread_id_t id) {
+	if(id < KTHREAD_USER_TSK0_ID || id > KTHREAD_USER_TSK3_ID) return false;
+	return threads[id].pending_termination;
 }
 
 void kthread_set_pending_save_menu(kthread_id_t id, bool pending) {
@@ -280,6 +305,7 @@ int kthread_setup(kthread_id_t id, uint16_t seg, kthread_entry_t entry, uint16_t
 	threads[id].console = console;
 	threads[id].pending_save_menu = false;
 	threads[id].in_syscall = false;
+	threads[id].pending_termination = false;
 	threads[id].state = KTHREAD_READY;
 	started[id] = false;
 
@@ -299,6 +325,7 @@ int kthread_setup_restored(kthread_id_t id, uint16_t seg, uint16_t sp, uint8_t c
 	threads[id].console = console;
 	threads[id].pending_save_menu = false;
 	threads[id].in_syscall = false;
+	threads[id].pending_termination = false;
 	threads[id].state = KTHREAD_READY;
 	started[id] = false;
 	return 0;
@@ -336,15 +363,36 @@ void kthread_exit(kthread_id_t id) {
 	uint16_t irq_flags;
 	if(id < KTHREAD_USER_TSK0_ID || id > KTHREAD_USER_TSK3_ID || id == cur_thread)
 		return;
+	kaux_release_task(id);
 
 	kthread_critical_enter(irq_flags);
 	threads[id].pending_save_menu = false;
 	threads[id].in_syscall = false;
+	threads[id].pending_termination = false;
 	threads[id].ss = 0;
 	threads[id].sp = 0;
 	threads[id].state = KTHREAD_UNUSED;
 	started[id] = false;
 	kthread_critical_exit(irq_flags);
+}
+
+void kthread_exit_current(void) {
+	kthread_id_t id = cur_thread;
+	uint16_t irq_flags;
+	if(id < KTHREAD_USER_TSK0_ID || id > KTHREAD_USER_TSK3_ID) {
+		for(;;) __asm__ volatile ("hlt");
+	}
+	kaux_release_task(id);
+
+	kthread_critical_enter(irq_flags);
+	threads[id].pending_save_menu = false;
+	threads[id].in_syscall = false;
+	threads[id].pending_termination = false;
+	threads[id].state = KTHREAD_UNUSED;
+	started[id] = false;
+	kthread_critical_exit(irq_flags);
+
+	for(;;) kthread_schedule();
 }
 
 void kthread_schedule(void) {

@@ -84,6 +84,12 @@ user/cmd/build/REN.CMD: cmds
 
 user/cmd/build/DISKUSAGE.CMD: cmds
 
+user/cmd/build/TERMINATE.CMD: cmds
+
+user/cmd/build/EXEC.CMD: cmds
+
+user/cmd/build/EDIT.CMD: cmds
+
 rootfs/SHELL.TSK: user/shell/build/SHELL.BIN taskgen
 	mkdir -p rootfs
 	./taskgen/taskgen $< $@
@@ -102,7 +108,7 @@ boot/stage2/build/stage2.bin: stage2
 
 kernel/build/kernel.bin: kernel
 
-rootfs.img: boot/stage1/build/bootsector.bin boot/stage2/build/stage2.bin kernel/build/kernel.bin fsgen rootfs/SHELL.TSK rootfs/HELLO.TSK user/cmd/build/CLS.CMD user/cmd/build/TYPE.CMD user/cmd/build/DIR.CMD user/cmd/build/SET.CMD user/cmd/build/HELP.CMD user/cmd/build/FORMAT.CMD user/cmd/build/CREATEFILE.CMD user/cmd/build/COPY.CMD user/cmd/build/COPYSYS.CMD user/cmd/build/DEL.CMD user/cmd/build/MORE.CMD user/cmd/build/REN.CMD user/cmd/build/DISKUSAGE.CMD rootfs/README.TXT rootfs/SYSTEM.CFG
+rootfs.img: boot/stage1/build/bootsector.bin boot/stage2/build/stage2.bin kernel/build/kernel.bin fsgen rootfs/SHELL.TSK rootfs/HELLO.TSK user/cmd/build/CLS.CMD user/cmd/build/TYPE.CMD user/cmd/build/DIR.CMD user/cmd/build/SET.CMD user/cmd/build/HELP.CMD user/cmd/build/FORMAT.CMD user/cmd/build/CREATEFILE.CMD user/cmd/build/COPY.CMD user/cmd/build/COPYSYS.CMD user/cmd/build/DEL.CMD user/cmd/build/MORE.CMD user/cmd/build/REN.CMD user/cmd/build/DISKUSAGE.CMD user/cmd/build/TERMINATE.CMD user/cmd/build/EXEC.CMD user/cmd/build/EDIT.CMD rootfs/README.TXT rootfs/SYSTEM.CFG
 	./fsgen/fsgen rootfs.img \
 		--bootsector boot/stage1/build/bootsector.bin \
 		--stage2 boot/stage2/build/stage2.bin \
@@ -122,6 +128,9 @@ rootfs.img: boot/stage1/build/bootsector.bin boot/stage2/build/stage2.bin kernel
 		--file MORE.CMD=user/cmd/build/MORE.CMD \
 		--file REN.CMD=user/cmd/build/REN.CMD \
 		--file DISKUSAGE.CMD=user/cmd/build/DISKUSAGE.CMD \
+		--file TERMINATE.CMD=user/cmd/build/TERMINATE.CMD \
+		--file EXEC.CMD=user/cmd/build/EXEC.CMD \
+		--file EDIT.CMD=user/cmd/build/EDIT.CMD \
 		--file README.TXT=rootfs/README.TXT \
 		--file SYSTEM.CFG=rootfs/SYSTEM.CFG
 

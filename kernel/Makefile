@@ -48,8 +48,11 @@ $(BUILD)/kheap.o: $(SRC)/kheap.c $(SRC)/kheap.h $(SRC)/kpanic.h | $(BUILD)
 $(BUILD)/kfiles.o: $(SRC)/kfiles.c $(SRC)/kfiles.h $(SRC)/kheap.h $(SRC)/kmemmap.h $(SRC)/kthread.h $(SRC)/matfs16.h $(SRC)/utils.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/kfiles.c -o $@
 
-$(BUILD)/ksyscall.o: $(SRC)/ksyscall.c $(SRC)/ksyscall.h $(SRC)/8086.h $(SRC)/bioscons.h $(SRC)/kfiles.h $(SRC)/kpanic.h $(SRC)/matfs16.h $(SRC)/utils.h ../include/syscalls.inc | $(BUILD)
+$(BUILD)/ksyscall.o: $(SRC)/ksyscall.c $(SRC)/ksyscall.h $(SRC)/8086.h $(SRC)/bioscons.h $(SRC)/kaux.h $(SRC)/kfiles.h $(SRC)/kpanic.h $(SRC)/matfs16.h $(SRC)/utils.h ../include/syscalls.inc | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/ksyscall.c -o $@
+
+$(BUILD)/kaux.o: $(SRC)/kaux.c $(SRC)/kaux.h $(SRC)/kthread.h | $(BUILD)
+	$(CC) $(CFLAGS) -c $(SRC)/kaux.c -o $@
 
 $(BUILD)/utils.o: $(SRC)/utils.c $(SRC)/utils.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/utils.c -o $@
@@ -57,22 +60,22 @@ $(BUILD)/utils.o: $(SRC)/utils.c $(SRC)/utils.h | $(BUILD)
 $(BUILD)/matfs16.o: $(SRC)/matfs16.c $(SRC)/matfs16.h $(SRC)/biosdisk.h $(SRC)/kmemmap.h $(SRC)/kthread.h $(SRC)/utils.h ../common/libc/include/string.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/matfs16.c -o $@
 
-$(BUILD)/task.o: $(SRC)/task.c $(SRC)/task.h $(SRC)/mtsk16.h $(SRC)/matfs16.h $(SRC)/bioscons.h $(SRC)/kmemmap.h $(SRC)/kfiles.h $(SRC)/kthread.h ../common/libc/include/lzss.h $(SRC)/utils.h | $(BUILD)
+$(BUILD)/task.o: $(SRC)/task.c $(SRC)/task.h $(SRC)/mtsk16.h $(SRC)/matfs16.h $(SRC)/bioscons.h $(SRC)/kmemmap.h $(SRC)/kaux.h $(SRC)/kfiles.h $(SRC)/kthread.h ../common/libc/include/lzss.h $(SRC)/utils.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/task.c -o $@
 
 $(BUILD)/kconsole.o: $(SRC)/kconsole.c $(SRC)/kconsole.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/kconsole.c -o $@
 
-$(BUILD)/kthread.o: $(SRC)/kthread.c $(SRC)/kthread.h $(SRC)/kmemmap.h $(SRC)/utils.h | $(BUILD)
+$(BUILD)/kthread.o: $(SRC)/kthread.c $(SRC)/kthread.h $(SRC)/kaux.h $(SRC)/kmemmap.h $(SRC)/utils.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/kthread.c -o $@
 
-$(BUILD)/savemenu.o: $(SRC)/savemenu.c $(SRC)/savemenu.h $(SRC)/kthread.h $(SRC)/kconsole.h $(SRC)/mtsk16.h $(SRC)/matfs16.h $(SRC)/task.h $(SRC)/kmemmap.h $(SRC)/kfiles.h $(SRC)/utils.h | $(BUILD)
+$(BUILD)/savemenu.o: $(SRC)/savemenu.c $(SRC)/savemenu.h $(SRC)/kthread.h $(SRC)/kaux.h $(SRC)/kconsole.h $(SRC)/mtsk16.h $(SRC)/matfs16.h $(SRC)/task.h $(SRC)/kmemmap.h $(SRC)/kfiles.h $(SRC)/utils.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $(SRC)/savemenu.c -o $@
 
 $(COMMON_LIBC): $(COMMON_LIBC_INPUTS)
 	$(MAKE) -C ../common/libc/
 
-$(BUILD)/kernel.elf: $(BUILD)/kentry.o $(BUILD)/isr.o $(BUILD)/switchto.o $(BUILD)/waitkey.o $(BUILD)/biosdisk.o $(BUILD)/kmain.o $(BUILD)/parsecfg.o $(BUILD)/bioscons.o $(BUILD)/kpanic.o $(BUILD)/kheap.o $(BUILD)/kfiles.o $(BUILD)/ksyscall.o $(BUILD)/utils.o $(BUILD)/matfs16.o $(BUILD)/task.o $(BUILD)/kconsole.o $(BUILD)/kthread.o $(BUILD)/savemenu.o $(COMMON_LIBC) $(SRC)/kernel.ld
+$(BUILD)/kernel.elf: $(BUILD)/kentry.o $(BUILD)/isr.o $(BUILD)/switchto.o $(BUILD)/waitkey.o $(BUILD)/biosdisk.o $(BUILD)/kmain.o $(BUILD)/parsecfg.o $(BUILD)/bioscons.o $(BUILD)/kpanic.o $(BUILD)/kheap.o $(BUILD)/kfiles.o $(BUILD)/ksyscall.o $(BUILD)/kaux.o $(BUILD)/utils.o $(BUILD)/matfs16.o $(BUILD)/task.o $(BUILD)/kconsole.o $(BUILD)/kthread.o $(BUILD)/savemenu.o $(COMMON_LIBC) $(SRC)/kernel.ld
 	$(LD) $(LDFLAGS) -T $(SRC)/kernel.ld -o $@ $(filter-out $(SRC)/kernel.ld,$^)
 
 $(BUILD)/kernel.bin: $(BUILD)/kernel.elf
