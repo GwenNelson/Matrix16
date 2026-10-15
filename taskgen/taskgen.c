@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "lzss.h"
 #include "mtsk16.h"
 
 #define TASK_MEMORY_SIZE (MTSK16_MEMORY_BLOCKS * MTSK16_MEMORY_LAST_BLOCK_BYTES)
@@ -77,7 +78,8 @@ static int read_input(const char *path, uint8_t *memory) {
 	return 1;
 }
 
-static void build_header(uint8_t *header) {
+static void build_header(uint8_t *header, uint16_t memory_encoding,
+	                     uint16_t stored_blocks, uint16_t last_block_bytes) {
 	memcpy(header + offsetof(mtsk16_header_t, magic), MTSK16_MAGIC,
 		MTSK16_MAGIC_SIZE);
 	write_header_u16(header, offsetof(mtsk16_header_t, version),
@@ -89,7 +91,7 @@ static void build_header(uint8_t *header) {
 	write_header_u16(header, offsetof(mtsk16_header_t, context_format),
 		MTSK16_CONTEXT_ISR_V1);
 	write_header_u16(header, offsetof(mtsk16_header_t, memory_encoding),
-		MTSK16_MEMORY_RAW);
+		memory_encoding);
 	write_header_u16(header, offsetof(mtsk16_header_t, screen_mode),
 		MTSK16_SCREEN_TEXT_80X25_COLOR);
 	write_header_u16(header, offsetof(mtsk16_header_t, vram_size),
@@ -101,9 +103,9 @@ static void build_header(uint8_t *header) {
 	write_header_u16(header, offsetof(mtsk16_header_t, memory_first_block),
 		MTSK16_MEMORY_FIRST_BLOCK);
 	write_header_u16(header, offsetof(mtsk16_header_t, memory_stored_blocks),
-		MTSK16_MEMORY_BLOCKS);
+		stored_blocks);
 	write_header_u16(header, offsetof(mtsk16_header_t, memory_last_block_bytes),
-		MTSK16_MEMORY_LAST_BLOCK_BYTES);
+		last_block_bytes);
 	write_header_u16(header, offsetof(mtsk16_header_t, memory_decoded_blocks),
 		MTSK16_MEMORY_BLOCKS);
 	write_header_u16(header, offsetof(mtsk16_header_t, resume_sp),
@@ -132,7 +134,7 @@ static void build_initial_context(uint8_t *memory) {
 }
 
 static int write_output(const char *path, const uint8_t *header,
-	const uint8_t *vram, const uint8_t *memory) {
+	const uint8_t *vram, const uint8_t *memory, size_t memory_size) {
 	FILE *output = fopen(path, "wb");
 	int ok = 1;
 
@@ -143,7 +145,7 @@ static int write_output(const char *path, const uint8_t *header,
 
 	if(fwrite(header, 1, MTSK16_HEADER_SIZE, output) != MTSK16_HEADER_SIZE) ok = 0;
 	if(ok && fwrite(vram, 1, MTSK16_VRAM_SIZE, output) != MTSK16_VRAM_SIZE) ok = 0;
-	if(ok && fwrite(memory, 1, TASK_MEMORY_SIZE, output) != TASK_MEMORY_SIZE) ok = 0;
+	if(ok && fwrite(memory, 1, memory_size, output) != memory_size) ok = 0;
 	if(fclose(output) != 0) ok = 0;
 
 	if(!ok) {
@@ -158,6 +160,12 @@ int main(int argc, char **argv) {
 	uint8_t *header;
 	uint8_t *vram;
 	uint8_t *memory;
+	uint8_t *compressed;
+	uint16_t memory_encoding = MTSK16_MEMORY_RAW;
+	uint16_t stored_blocks = MTSK16_MEMORY_BLOCKS;
+	uint16_t last_block_bytes = MTSK16_MEMORY_LAST_BLOCK_BYTES;
+	uint16_t compressed_size = 0;
+	size_t output_memory_size = TASK_MEMORY_SIZE;
 	int ok;
 
 	if(argc != 3) {
@@ -168,24 +176,44 @@ int main(int argc, char **argv) {
 	header = calloc(1, MTSK16_HEADER_SIZE);
 	vram = calloc(1, MTSK16_VRAM_SIZE);
 	memory = calloc(1, TASK_MEMORY_SIZE);
-	if(header == NULL || vram == NULL || memory == NULL) {
+	compressed = malloc(TASK_MEMORY_SIZE - 1);
+	if(header == NULL || vram == NULL || memory == NULL || compressed == NULL) {
 		fprintf(stderr, "taskgen: out of memory\n");
 		free(header);
 		free(vram);
 		free(memory);
+		free(compressed);
 		return 1;
 	}
 
 	ok = read_input(argv[1], memory);
 	if(ok) {
-		build_header(header);
+		m16_lzss_length_t memory_length = { MTSK16_MEMORY_BLOCKS, 0 };
+
+		if(m16_lzss_compress(memory, memory_length, compressed,
+		                     TASK_MEMORY_SIZE - 1, &compressed_size)) {
+			uint16_t remainder = compressed_size % M16_LZSS_BLOCK_SIZE;
+			memory_encoding = MTSK16_MEMORY_LZSS;
+			stored_blocks = compressed_size / M16_LZSS_BLOCK_SIZE;
+			if(remainder == 0) last_block_bytes = M16_LZSS_BLOCK_SIZE;
+			else {
+				stored_blocks++;
+				last_block_bytes = remainder;
+			}
+			output_memory_size = compressed_size;
+		}
+
+		build_header(header, memory_encoding, stored_blocks, last_block_bytes);
 		build_vram(vram);
 		build_initial_context(memory);
-		ok = write_output(argv[2], header, vram, memory);
+		ok = write_output(argv[2], header, vram,
+		                  memory_encoding == MTSK16_MEMORY_LZSS ? compressed : memory,
+		                  output_memory_size);
 	}
 
 	free(header);
 	free(vram);
 	free(memory);
+	free(compressed);
 	return ok ? 0 : 1;
 }

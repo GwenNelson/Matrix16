@@ -2,6 +2,8 @@
 #include <stdint.h>
 
 #include "bioscons.h"
+#include "kmemmap.h"
+#include "lzss.h"
 #include "matfs16.h"
 #include "mtsk16.h"
 #include "task.h"
@@ -15,6 +17,7 @@
 #endif
 
 static const char task_magic[MTSK16_MAGIC_SIZE] = MTSK16_MAGIC;
+static uint8_t task_lzss_history[M16_LZSS_WINDOW_SIZE];
 
 static void report_loaded_block(void) {
 	bios_putchar('.', cur_page_no);
@@ -40,15 +43,24 @@ static task_status_t validate_header(const mtsk16_header_t __far *header) {
 	if(header->header_size != MTSK16_HEADER_SIZE) return TASK_ERR_BAD_HEADER;
 	if(header->flags != MTSK16_FLAG_RELOCATABLE_SEGMENTS) return TASK_ERR_BAD_HEADER;
 	if(header->context_format != MTSK16_CONTEXT_ISR_V1) return TASK_ERR_UNSUPPORTED_CONTEXT;
-	if(header->memory_encoding != MTSK16_MEMORY_RAW) return TASK_ERR_UNSUPPORTED_ENCODING;
+	if(header->memory_encoding != MTSK16_MEMORY_RAW &&
+	   header->memory_encoding != MTSK16_MEMORY_LZSS) return TASK_ERR_UNSUPPORTED_ENCODING;
 	if(header->screen_mode != MTSK16_SCREEN_TEXT_80X25_COLOR) return TASK_ERR_BAD_HEADER;
 	if(header->vram_size != MTSK16_VRAM_SIZE) return TASK_ERR_BAD_HEADER;
 	if(header->vram_first_block != MTSK16_VRAM_FIRST_BLOCK) return TASK_ERR_BAD_HEADER;
 	if(header->vram_block_count != MTSK16_VRAM_BLOCKS) return TASK_ERR_BAD_HEADER;
 	if(header->memory_first_block != MTSK16_MEMORY_FIRST_BLOCK) return TASK_ERR_BAD_HEADER;
-	if(header->memory_stored_blocks != MTSK16_MEMORY_BLOCKS) return TASK_ERR_BAD_HEADER;
-	if(header->memory_last_block_bytes != MTSK16_MEMORY_LAST_BLOCK_BYTES) return TASK_ERR_BAD_HEADER;
 	if(header->memory_decoded_blocks != MTSK16_MEMORY_BLOCKS) return TASK_ERR_BAD_HEADER;
+	if(header->memory_encoding == MTSK16_MEMORY_RAW) {
+		if(header->memory_stored_blocks != MTSK16_MEMORY_BLOCKS) return TASK_ERR_BAD_HEADER;
+		if(header->memory_last_block_bytes != MTSK16_MEMORY_LAST_BLOCK_BYTES) return TASK_ERR_BAD_HEADER;
+	} else {
+		if(header->memory_stored_blocks == 0 || header->memory_stored_blocks > MTSK16_MEMORY_BLOCKS) return TASK_ERR_BAD_HEADER;
+		if(header->memory_last_block_bytes == 0 ||
+		   header->memory_last_block_bytes > MATFS16_BLOCK_SIZE) return TASK_ERR_BAD_HEADER;
+		if(header->memory_stored_blocks == MTSK16_MEMORY_BLOCKS &&
+		   header->memory_last_block_bytes == MATFS16_BLOCK_SIZE) return TASK_ERR_BAD_HEADER;
+	}
 	if(header->console_state_format != MTSK16_CONSOLE_STATE_V1) return TASK_ERR_BAD_HEADER;
 	if(header->console_state_size != sizeof(mtsk16_console_state_v1_t)) return TASK_ERR_BAD_HEADER;
 	if(header->console.row >= TASK_SCREEN_ROWS || header->console.col >= TASK_SCREEN_COLS) return TASK_ERR_BAD_HEADER;
@@ -164,9 +176,34 @@ task_status_t task_restore(uint8_t drive_no, uint16_t first_lba, const task_buff
 	                                buffers->vram.segment, buffers->vram.offset);
 	if(status != TASK_OK) return status;
 
-	status = load_task_chain_blocks(drive_no, &current_lba, MTSK16_MEMORY_BLOCKS,
-	                                buffers->memory_segment, 0);
-	if(status != TASK_OK) return status;
+	if(memory_encoding == MTSK16_MEMORY_RAW) {
+		status = load_task_chain_blocks(drive_no, &current_lba, MTSK16_MEMORY_BLOCKS,
+		                                buffers->memory_segment, 0);
+		if(status != TASK_OK) return status;
+	} else {
+		uint16_t stored_blocks = header->memory_stored_blocks;
+		uint16_t last_block_bytes = header->memory_last_block_bytes;
+		uint16_t compressed_size = (stored_blocks - 1) * MATFS16_BLOCK_SIZE + last_block_bytes;
+		uint16_t padding_offset = compressed_size;
+		uint16_t padding_count = MATFS16_BLOCK_SIZE - last_block_bytes;
+		uint8_t __far *compressed = (uint8_t __far *)mk_farptr(SEG_AUX, 0);
+		uint8_t __far *padding = (uint8_t __far *)mk_farptr(SEG_AUX, padding_offset);
+		m16_lzss_length_t decoded_size = { MTSK16_MEMORY_BLOCKS, 0 };
+
+		status = load_task_chain_blocks(drive_no, &current_lba, stored_blocks,
+		                                SEG_AUX, 0);
+		if(status != TASK_OK) return status;
+
+		for(uint16_t i = 0; i < padding_count; i++) {
+			if(padding[i] != 0) return TASK_ERR_BAD_COMPRESSION;
+		}
+
+		if(!m16_lzss_decompress(compressed, compressed_size,
+		                        (uint8_t __far *)mk_farptr(buffers->memory_segment, 0),
+		                        decoded_size, task_lzss_history)) {
+			return TASK_ERR_BAD_COMPRESSION;
+		}
+	}
 
 	matfs_status = matfs16_next_block(drive_no, current_lba, &next_lba);
 	if(matfs_status == MATFS16_OK) return TASK_ERR_TRAILING_BLOCKS;

@@ -76,10 +76,10 @@ typedef struct __attribute__((packed)) mtsk16_header_t {
 	uint16_t vram_size;
 	uint16_t vram_first_block;
 	uint16_t vram_block_count;
-	uint16_t memory_first_block;
-	uint16_t memory_stored_blocks;
-	uint16_t memory_last_block_bytes;
-	uint16_t memory_decoded_blocks;
+	uint16_t memory_first_block;       /* First memory payload block in the file */
+	uint16_t memory_stored_blocks;     /* Sectors stored for the memory payload */
+	uint16_t memory_last_block_bytes;  /* Valid bytes in its final sector (1..512) */
+	uint16_t memory_decoded_blocks;    /* Decoded memory size, in 512-byte blocks */
 	uint16_t resume_sp;
 	uint16_t console_state_format;
 	uint16_t console_state_size;
