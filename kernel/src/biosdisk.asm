@@ -13,8 +13,15 @@ bios_read_sector:
     push bp
     mov  bp, sp
 
+    ; BIOS implementations may clobber registers beyond AX. Keep the caller's
+    ; C register and data-segment state intact around the interrupt.
     push bx
     push es
+    push ds
+    push cx
+    push dx
+    push si
+    push di
 
     mov  ax, [bp+4]      ; ES
     mov  es, ax
@@ -37,6 +44,11 @@ bios_read_sector:
     xor  ah, ah           ; return it as uint16_t
 
 .done:
+    pop  di
+    pop  si
+    pop  dx
+    pop  cx
+    pop  ds
     pop  es
     pop  bx
     pop  bp
@@ -48,8 +60,14 @@ bios_read_sectors:
     push bp
     mov  bp, sp
 
+    ; Match the single-sector wrapper's preservation of the C environment.
     push bx
     push es
+    push ds
+    push cx
+    push dx
+    push si
+    push di
 
     mov  ax, [bp+4]      ; ES
     mov  es, ax
@@ -78,6 +96,11 @@ bios_read_sectors:
     mov  ax, 0x0100       ; generic error: BIOS transferred too few sectors
 
 .multi_done:
+    pop  di
+    pop  si
+    pop  dx
+    pop  cx
+    pop  ds
     pop  es
     pop  bx
     pop  bp
@@ -89,8 +112,15 @@ bios_write_sector:
     push bp
     mov  bp, sp
 
+    ; Keep the kernel C environment intact across BIOS implementations that
+    ; clobber registers beyond the documented result in AX.
     push bx
     push es
+    push ds
+    push cx
+    push dx
+    push si
+    push di
 
     mov  ax, [bp+4]      ; ES
     mov  es, ax
@@ -113,6 +143,11 @@ bios_write_sector:
     xor  ah, ah
 
 .write_done:
+    pop  di
+    pop  si
+    pop  dx
+    pop  cx
+    pop  ds
     pop  es
     pop  bx
     pop  bp
