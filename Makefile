@@ -1,4 +1,4 @@
-.PHONY: all clean kernel kernel-clean stage1 stage1-clean stage2 stage2-clean fsgen fsgen-clean taskgen taskgen-clean common-libc common-libc-clean user-libc user-libc-clean shell shell-clean cmds cmds-clean run
+.PHONY: all clean kernel kernel-clean stage1 stage1-clean stage2 stage2-clean fsgen fsgen-clean taskgen taskgen-clean common-libc common-libc-clean user-libc user-libc-clean shell shell-clean cmds cmds-clean basic basic-clean run
 
 all: rootfs.img kernel
 
@@ -90,6 +90,14 @@ user/cmd/build/EXEC.CMD: cmds
 
 user/cmd/build/EDIT.CMD: cmds
 
+basic: taskgen
+	$(MAKE) -C user/basic/
+
+basic-clean:
+	$(MAKE) -C user/basic/ clean
+
+user/basic/build/BASIC.TSK: basic
+
 rootfs/SHELL.TSK: user/shell/build/SHELL.BIN taskgen
 	mkdir -p rootfs
 	./taskgen/taskgen $< $@
@@ -108,13 +116,14 @@ boot/stage2/build/stage2.bin: stage2
 
 kernel/build/kernel.bin: kernel
 
-rootfs.img: boot/stage1/build/bootsector.bin boot/stage2/build/stage2.bin kernel/build/kernel.bin fsgen rootfs/SHELL.TSK rootfs/HELLO.TSK user/cmd/build/CLS.CMD user/cmd/build/TYPE.CMD user/cmd/build/DIR.CMD user/cmd/build/SET.CMD user/cmd/build/HELP.CMD user/cmd/build/FORMAT.CMD user/cmd/build/CREATEFILE.CMD user/cmd/build/COPY.CMD user/cmd/build/COPYSYS.CMD user/cmd/build/DEL.CMD user/cmd/build/MORE.CMD user/cmd/build/REN.CMD user/cmd/build/DISKUSAGE.CMD user/cmd/build/TERMINATE.CMD user/cmd/build/EXEC.CMD user/cmd/build/EDIT.CMD rootfs/README.TXT rootfs/SYSTEM.CFG
+rootfs.img: boot/stage1/build/bootsector.bin boot/stage2/build/stage2.bin kernel/build/kernel.bin fsgen rootfs/SHELL.TSK rootfs/HELLO.TSK user/basic/build/BASIC.TSK user/cmd/build/CLS.CMD user/cmd/build/TYPE.CMD user/cmd/build/DIR.CMD user/cmd/build/SET.CMD user/cmd/build/HELP.CMD user/cmd/build/FORMAT.CMD user/cmd/build/CREATEFILE.CMD user/cmd/build/COPY.CMD user/cmd/build/COPYSYS.CMD user/cmd/build/DEL.CMD user/cmd/build/MORE.CMD user/cmd/build/REN.CMD user/cmd/build/DISKUSAGE.CMD user/cmd/build/TERMINATE.CMD user/cmd/build/EXEC.CMD user/cmd/build/EDIT.CMD rootfs/README.TXT rootfs/SYSTEM.CFG
 	./fsgen/fsgen rootfs.img \
 		--bootsector boot/stage1/build/bootsector.bin \
 		--stage2 boot/stage2/build/stage2.bin \
 		--kernel kernel/build/kernel.bin \
 		--task0 HELLO.TSK=rootfs/HELLO.TSK \
 		--file SHELL.TSK=rootfs/SHELL.TSK \
+		--file BASIC.TSK=user/basic/build/BASIC.TSK \
 		--file CLS.CMD=user/cmd/build/CLS.CMD \
 		--file TYPE.CMD=user/cmd/build/TYPE.CMD \
 		--file DIR.CMD=user/cmd/build/DIR.CMD \
@@ -141,5 +150,5 @@ run: rootfs.img kernel
 		-drive file=rootfs.img,format=raw,if=floppy,index=0
 
 
-clean: stage1-clean stage2-clean kernel-clean fsgen-clean taskgen-clean common-libc-clean user-libc-clean shell-clean cmds-clean
+clean: stage1-clean stage2-clean kernel-clean fsgen-clean taskgen-clean common-libc-clean user-libc-clean shell-clean cmds-clean basic-clean
 	rm -f user/build/SHELL.BIN user/build/HELLO.BIN rootfs/SHELL.TSK rootfs/HELLO.TSK rootfs.img
