@@ -128,9 +128,7 @@ rootfs.img: boot/stage1/build/bootsector.bin boot/stage2/build/stage2.bin kernel
 
 run: rootfs.img kernel
 	qemu-system-i386 \
-		-monitor vc \
-		-debugcon stdio \
-		-global isa-debugcon.iobase=0xe9 \
+		-monitor stdio \
 		-drive file=rootfs.img,format=raw,if=floppy,index=0
 
 

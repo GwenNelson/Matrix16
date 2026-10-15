@@ -57,16 +57,34 @@ static uint16_t read_u16(const uint8_t __far *bytes) {
 	return (uint16_t)bytes[0] | ((uint16_t)bytes[1] << 8);
 }
 
+static char uppercase_filename_char(char value) {
+	if(value >= 'a' && value <= 'z') return value - 'a' + 'A';
+	return value;
+}
+
+static bool normalize_filename(const char *source, char *destination) {
+	uint16_t length;
+	uint16_t i;
+
+	if(source == NULL || destination == NULL) return false;
+	length = strnlen(source, MATFS16_FILENAME_MAXLEN);
+	if(length == 0 || length == MATFS16_FILENAME_MAXLEN) return false;
+
+	for(i = 0; i < length; i++) destination[i] = uppercase_filename_char(source[i]);
+	destination[length] = '\0';
+	return true;
+}
+
 static bool filename_matches_far(const char __far *stored, const char *wanted) {
 	while(*stored && *wanted) {
-		if(*stored++ != *wanted++) return false;
+		if(uppercase_filename_char(*stored++) != uppercase_filename_char(*wanted++)) return false;
 	}
 	return *stored == *wanted;
 }
 
 static void copy_filename_from_far(char *destination, const char __far *source) {
 	for(uint8_t i = 0; i < MATFS16_FILENAME_MAXLEN; i++) {
-		destination[i] = source[i];
+		destination[i] = uppercase_filename_char(source[i]);
 		if(source[i] == '\0') return;
 	}
 	destination[MATFS16_FILENAME_MAXLEN - 1] = '\0';
@@ -208,7 +226,8 @@ static void copy_directory_entry(matfs_directory_entry_t __far *destination,
 	destination->first_block = source->first_block;
 	destination->block_count = source->block_count;
 	destination->logical_size = source->logical_size;
-	for(i = 0; i < MATFS16_FILENAME_MAXLEN; i++) destination->name[i] = source->name[i];
+	for(i = 0; i < MATFS16_FILENAME_MAXLEN; i++)
+		destination->name[i] = uppercase_filename_char(source->name[i]);
 }
 
 static bool verify_blockchain_block(const uint8_t __far *blockchain) {
@@ -292,6 +311,7 @@ static matfs16_status_t find_directory_entry(uint8_t drive_no, const char* filen
 	                                            uint16_t* entry_index,
 	                                            matfs_directory_entry_t* entry,
 	                                            bool scan_all_blocks) {
+	char normalized_filename[MATFS16_FILENAME_MAXLEN];
 	matfs16_directory_cursor_t cursor;
 	matfs_directory_block_t __far *directory;
 	matfs16_status_t status;
@@ -299,6 +319,7 @@ static matfs16_status_t find_directory_entry(uint8_t drive_no, const char* filen
 	uint16_t entries_in_block;
 	uint16_t i;
 
+	if(!normalize_filename(filename, normalized_filename)) return MATFS16_ERR_INVALID_ARGUMENT;
 	status = directory_cursor_start(drive_no, &cursor, &directory);
 	if(status != MATFS16_OK) return status;
 
@@ -309,7 +330,7 @@ static matfs16_status_t find_directory_entry(uint8_t drive_no, const char* filen
 		for(i = 0; i < entries_in_block; i++) {
 			if(!verify_file_entry(&directory->entries[i])) return MATFS16_ERR_BAD_DIRECTORY;
 			if(directory->entries[i].name[0] == '\0') continue;
-			if(filename_matches_far(directory->entries[i].name, filename)) {
+			if(filename_matches_far(directory->entries[i].name, normalized_filename)) {
 				if(entry_lba != NULL) *entry_lba = cursor.current_lba;
 				if(entry_slot != NULL) *entry_slot = (uint8_t)i;
 				if(entry_index != NULL) *entry_index = first_entry + i;
@@ -344,13 +365,15 @@ static matfs16_status_t find_directory_entry(uint8_t drive_no, const char* filen
 static matfs16_status_t update_file_entry(uint8_t drive_no, const char* filename,
 	                                        uint16_t first_block, uint16_t block_count,
 	                                        uint16_t logical_size) {
+	char normalized_filename[MATFS16_FILENAME_MAXLEN];
 	uint8_t __far *scratch_buf = get_scratch_buf();
 	uint16_t directory_lba;
 	uint8_t entry_slot;
 	matfs_directory_block_t __far * directory;
 	matfs16_status_t status;
 
-	status = find_directory_entry(drive_no, filename, &directory_lba, &entry_slot, NULL, NULL, false);
+	if(!normalize_filename(filename, normalized_filename)) return MATFS16_ERR_INVALID_ARGUMENT;
+	status = find_directory_entry(drive_no, normalized_filename, &directory_lba, &entry_slot, NULL, NULL, false);
 	if(status != MATFS16_OK) return status;
 	status = load_scratch_block(drive_no, directory_lba);
 	if(status != MATFS16_OK) return status;
@@ -685,14 +708,14 @@ matfs16_status_t matfs16_write_task_slot(uint8_t drive_no, uint8_t slot, uint16_
 }
 
 matfs16_status_t matfs16_locate_file(const char* filename, uint8_t drive_no, uint16_t* lba, uint16_t* length) {
+	char normalized_filename[MATFS16_FILENAME_MAXLEN];
 	matfs_directory_entry_t entry;
 	matfs16_status_t status;
 
-	if(filename == NULL || lba == NULL || length == NULL) return MATFS16_ERR_INVALID_ARGUMENT;
-	if(filename[0] == '\0') return MATFS16_ERR_INVALID_ARGUMENT;
-	if(strnlen(filename, MATFS16_FILENAME_MAXLEN) == MATFS16_FILENAME_MAXLEN) return MATFS16_ERR_INVALID_ARGUMENT;
+	if(lba == NULL || length == NULL ||
+	   !normalize_filename(filename, normalized_filename)) return MATFS16_ERR_INVALID_ARGUMENT;
 
-	status = find_directory_entry(drive_no, filename, NULL, NULL, NULL, &entry, true);
+	status = find_directory_entry(drive_no, normalized_filename, NULL, NULL, NULL, &entry, true);
 	if(status != MATFS16_OK) return status;
 	*lba = entry.first_block;
 	*length = entry.logical_size;
@@ -807,6 +830,7 @@ matfs16_status_t matfs16_store_block(uint8_t drive_no, uint16_t lba, uint16_t se
 }
 
 matfs16_status_t matfs16_create_file(uint8_t drive_no, const char* filename) {
+	char normalized_filename[MATFS16_FILENAME_MAXLEN];
 	matfs16_directory_cursor_t cursor;
 	matfs_directory_block_t __far * directory;
 	matfs_directory_entry_t __far *entry;
@@ -815,12 +839,11 @@ matfs16_status_t matfs16_create_file(uint8_t drive_no, const char* filename) {
 	uint16_t entry_index;
 	uint16_t i;
 
-	if(drive_no > 1 || filename == NULL || filename[0] == '\0' ||
-	   strnlen(filename, MATFS16_FILENAME_MAXLEN) == MATFS16_FILENAME_MAXLEN) {
+	if(drive_no > 1 || !normalize_filename(filename, normalized_filename)) {
 		return MATFS16_ERR_INVALID_ARGUMENT;
 	}
 
-	status = find_directory_entry(drive_no, filename, NULL, NULL, NULL, NULL, false);
+	status = find_directory_entry(drive_no, normalized_filename, NULL, NULL, NULL, NULL, false);
 	if(status == MATFS16_OK) return MATFS16_ERR_FILE_EXISTS;
 	if(status != MATFS16_ERR_NOT_FOUND) return status;
 
@@ -829,7 +852,7 @@ matfs16_status_t matfs16_create_file(uint8_t drive_no, const char* filename) {
 	if(cursor.entry_count >= cursor.root_blocks * MATFS16_DIRECTORY_ENTRIES_PER_BLOCK)
 		return MATFS16_ERR_DIRECTORY_FULL;
 
-	name_length = strnlen(filename, MATFS16_FILENAME_MAXLEN);
+	name_length = strnlen(normalized_filename, MATFS16_FILENAME_MAXLEN);
 	for(;;) {
 		for(entry_index = 0; entry_index < MATFS16_DIRECTORY_ENTRIES_PER_BLOCK; entry_index++) {
 			entry = &directory->entries[entry_index];
@@ -840,7 +863,7 @@ matfs16_status_t matfs16_create_file(uint8_t drive_no, const char* filename) {
 			entry->block_count = 0;
 			entry->logical_size = 0;
 			for(i = 0; i < MATFS16_FILENAME_MAXLEN; i++)
-				entry->name[i] = i < name_length ? filename[i] : '\0';
+				entry->name[i] = i < name_length ? normalized_filename[i] : '\0';
 
 			directory->checksum = directory_checksum((const uint8_t __far *)directory);
 			status = store_scratch_block(drive_no, cursor.current_lba);
@@ -879,20 +902,21 @@ matfs16_status_t matfs16_replace_file_blocks(uint8_t drive_no,
 	                                         uint16_t block_count,
 	                                         uint16_t logical_size,
 	                                         uint16_t* first_lba) {
+	char normalized_filename[MATFS16_FILENAME_MAXLEN];
 	matfs16_status_t status;
 	uint16_t allocated = 0;
 	uint16_t first = 0;
 	uint16_t previous = 0;
 
-	if(drive_no > 1 || filename == NULL || first_lba == NULL ||
+	if(drive_no > 1 || !normalize_filename(filename, normalized_filename) || first_lba == NULL ||
 	   block_count == 0 || block_count > MATFS16_DATA_BLOCK_COUNT ||
 	   (logical_size != MATFS16_FILE_SIZE_UNKNOWN && logical_size == 0)) {
 		return MATFS16_ERR_INVALID_ARGUMENT;
 	}
 
-	status = matfs16_delete_file(drive_no, filename);
+	status = matfs16_delete_file(drive_no, normalized_filename);
 	if(status != MATFS16_OK && status != MATFS16_ERR_NOT_FOUND) return status;
-	status = matfs16_create_file(drive_no, filename);
+	status = matfs16_create_file(drive_no, normalized_filename);
 	if(status != MATFS16_OK) return status;
 
 	while(allocated < block_count) {
@@ -918,7 +942,7 @@ matfs16_status_t matfs16_replace_file_blocks(uint8_t drive_no,
 		allocated++;
 	}
 
-	status = update_file_entry(drive_no, filename, first, block_count, logical_size);
+	status = update_file_entry(drive_no, normalized_filename, first, block_count, logical_size);
 	if(status != MATFS16_OK) {
 		release_allocated_chain(drive_no, first, block_count);
 		return status;
@@ -975,6 +999,7 @@ matfs16_status_t matfs16_write_file_block(uint8_t drive_no, uint16_t first_lba,
 }
 
 matfs16_status_t matfs16_delete_file(uint8_t drive_no, const char* filename) {
+	char normalized_filename[MATFS16_FILENAME_MAXLEN];
 	matfs_directory_entry_t target;
 	uint8_t changed_blockchain[MATFS16_BLOCKCHAIN_BLOCK_COUNT];
 	uint8_t __far *scratch_buf;
@@ -991,8 +1016,7 @@ matfs16_status_t matfs16_delete_file(uint8_t drive_no, const char* filename) {
 	uint16_t blockchain_block;
 	uint16_t i;
 
-	if(drive_no > 1 || filename == NULL || filename[0] == '\0' ||
-	   strnlen(filename, MATFS16_FILENAME_MAXLEN) == MATFS16_FILENAME_MAXLEN) {
+	if(drive_no > 1 || !normalize_filename(filename, normalized_filename)) {
 		return MATFS16_ERR_INVALID_ARGUMENT;
 	}
 
@@ -1003,7 +1027,7 @@ matfs16_status_t matfs16_delete_file(uint8_t drive_no, const char* filename) {
 
 	status = matfs16_locate_root(drive_no, &root_lba, &root_blocks);
 	if(status != MATFS16_OK) return status;
-	status = find_directory_entry(drive_no, filename, &directory_lba, &entry_slot,
+	status = find_directory_entry(drive_no, normalized_filename, &directory_lba, &entry_slot,
 	                              NULL, &target, false);
 	if(status != MATFS16_OK) return status;
 	status = verify_file_chain(drive_no, &target);
@@ -1017,7 +1041,7 @@ matfs16_status_t matfs16_delete_file(uint8_t drive_no, const char* filename) {
 	entry_count = directory->entry_count;
 	if(entry_count == 0) return MATFS16_ERR_BAD_DIRECTORY;
 	if(!verify_file_entry(&directory->entries[entry_slot]) ||
-	   !filename_matches_far(directory->entries[entry_slot].name, filename))
+	   !filename_matches_far(directory->entries[entry_slot].name, normalized_filename))
 		return MATFS16_ERR_NOT_FOUND;
 
 	/* A NUL first character marks this directory slot as deleted. */
@@ -1067,6 +1091,8 @@ matfs16_status_t matfs16_delete_file(uint8_t drive_no, const char* filename) {
 }
 
 matfs16_status_t matfs16_rename_file(uint8_t drive_no, const char* old_name, const char* new_name) {
+	char normalized_old_name[MATFS16_FILENAME_MAXLEN];
+	char normalized_new_name[MATFS16_FILENAME_MAXLEN];
 	uint8_t __far *scratch_buf = get_scratch_buf();
 	matfs_directory_block_t __far * directory;
 	matfs16_status_t status;
@@ -1075,15 +1101,15 @@ matfs16_status_t matfs16_rename_file(uint8_t drive_no, const char* old_name, con
 	uint16_t i;
 	uint16_t new_length;
 
-	if(drive_no > 1 || old_name == NULL || new_name == NULL ||
-	   old_name[0] == '\0' || new_name[0] == '\0') return MATFS16_ERR_INVALID_ARGUMENT;
-	if(strnlen(old_name, MATFS16_FILENAME_MAXLEN) == MATFS16_FILENAME_MAXLEN ||
-	   (new_length = strnlen(new_name, MATFS16_FILENAME_MAXLEN)) == MATFS16_FILENAME_MAXLEN)
+	if(drive_no > 1 ||
+	   !normalize_filename(old_name, normalized_old_name) ||
+	   !normalize_filename(new_name, normalized_new_name))
 		return MATFS16_ERR_INVALID_ARGUMENT;
-	status = find_directory_entry(drive_no, old_name, &directory_lba, &entry_slot, NULL, NULL, false);
+	new_length = strnlen(normalized_new_name, MATFS16_FILENAME_MAXLEN);
+	status = find_directory_entry(drive_no, normalized_old_name, &directory_lba, &entry_slot, NULL, NULL, false);
 	if(status != MATFS16_OK) return status;
-	if(strcmp(old_name, new_name) == 0) return MATFS16_OK;
-	status = find_directory_entry(drive_no, new_name, NULL, NULL, NULL, NULL, false);
+	if(strcmp(normalized_old_name, normalized_new_name) == 0) return MATFS16_OK;
+	status = find_directory_entry(drive_no, normalized_new_name, NULL, NULL, NULL, NULL, false);
 	if(status == MATFS16_OK) return MATFS16_ERR_FILE_EXISTS;
 	if(status != MATFS16_ERR_NOT_FOUND) return status;
 
@@ -1093,12 +1119,13 @@ matfs16_status_t matfs16_rename_file(uint8_t drive_no, const char* old_name, con
 	if(!verify_directory_block(directory)) return MATFS16_ERR_BAD_DIRECTORY;
 
 	for(i = 0; i < MATFS16_FILENAME_MAXLEN; i++) directory->entries[entry_slot].name[i] = '\0';
-	for(i = 0; i < new_length; i++) directory->entries[entry_slot].name[i] = new_name[i];
+	for(i = 0; i < new_length; i++) directory->entries[entry_slot].name[i] = normalized_new_name[i];
 	directory->checksum = directory_checksum(scratch_buf);
 	return store_scratch_block(drive_no, directory_lba);
 }
 
 matfs16_status_t matfs16_write_file(uint8_t drive_no, const char* filename, uint16_t position, uint16_t* last_lba, uint16_t seg, uint16_t buf, uint16_t count, uint16_t* bytes_written) {
+	char normalized_filename[MATFS16_FILENAME_MAXLEN];
 	uint8_t __far *scratch_buf = get_scratch_buf();
 	uint8_t __far* source = (uint8_t __far*)mk_farptr(seg, buf);
 	matfs_directory_entry_t entry;
@@ -1117,12 +1144,12 @@ matfs16_status_t matfs16_write_file(uint8_t drive_no, const char* filename, uint
 
 	if(bytes_written == NULL || last_lba == NULL) return MATFS16_ERR_INVALID_ARGUMENT;
 	*bytes_written = 0;
-	if(drive_no > 1 || filename == NULL || buf > 0xFE00 ||
+	if(drive_no > 1 || !normalize_filename(filename, normalized_filename) || buf > 0xFE00 ||
 	   (count != 0 && count - 1 > 0xFFFF - buf)) return MATFS16_ERR_INVALID_ARGUMENT;
 	if(count == 0) return MATFS16_OK;
 	if(position == MATFS16_FILE_SIZE_UNKNOWN || count > 0xFFFE - position) return MATFS16_ERR_NO_SPACE;
 
-	status = find_directory_entry(drive_no, filename, NULL, NULL, NULL, &entry, false);
+	status = find_directory_entry(drive_no, normalized_filename, NULL, NULL, NULL, &entry, false);
 	if(status != MATFS16_OK) return status;
 	if(entry.logical_size == MATFS16_FILE_SIZE_UNKNOWN) return MATFS16_ERR_INVALID_ARGUMENT;
 	if(position != entry.logical_size) return MATFS16_ERR_INVALID_ARGUMENT;
@@ -1180,7 +1207,7 @@ matfs16_status_t matfs16_write_file(uint8_t drive_no, const char* filename, uint
 
 		current_position += chunk;
 		entry.logical_size = current_position;
-		status = update_file_entry(drive_no, filename, entry.first_block,
+		status = update_file_entry(drive_no, normalized_filename, entry.first_block,
 		                           entry.block_count, entry.logical_size);
 		if(status != MATFS16_OK) return status;
 		if(new_block) *last_lba = current_lba;

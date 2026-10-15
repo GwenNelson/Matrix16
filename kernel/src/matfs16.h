@@ -12,7 +12,9 @@
 #define MATFS16_DATA_START_LBA              18
 #define MATFS16_DATA_BLOCK_COUNT           702
 
-/* A directory filename field is 26 bytes including its terminating NUL. */
+/* A directory filename field is 26 bytes including its terminating NUL.
+ * MATFS16 filename arguments are case-insensitive; names are stored and
+ * returned uppercase. */
 #define MATFS16_FILENAME_MAXLEN             26
 #define MATFS16_DIRECTORY_ENTRIES_PER_BLOCK 15
 #define MATFS16_TASK_SLOT_COUNT               4

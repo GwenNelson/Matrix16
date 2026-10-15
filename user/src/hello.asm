@@ -19,7 +19,8 @@ start:
 	int 0x80
 
 .hang:
-    jmp .hang
+	hlt
+	jmp .hang
 
 message:
     db "Hello from Matrix16!",10,0

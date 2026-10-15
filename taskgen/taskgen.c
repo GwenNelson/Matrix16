@@ -190,6 +190,10 @@ int main(int argc, char **argv) {
 	if(ok) {
 		m16_lzss_length_t memory_length = { MTSK16_MEMORY_BLOCKS, 0 };
 
+		/* The initial interrupt frame is part of the memory image. Initialize it
+		 * before compression so the compressed payload contains the right FLAGS. */
+		build_initial_context(memory);
+
 		if(m16_lzss_compress(memory, memory_length, compressed,
 		                     TASK_MEMORY_SIZE - 1, &compressed_size)) {
 			uint16_t remainder = compressed_size % M16_LZSS_BLOCK_SIZE;
@@ -205,7 +209,6 @@ int main(int argc, char **argv) {
 
 		build_header(header, memory_encoding, stored_blocks, last_block_bytes);
 		build_vram(vram);
-		build_initial_context(memory);
 		ok = write_output(argv[2], header, vram,
 		                  memory_encoding == MTSK16_MEMORY_LZSS ? compressed : memory,
 		                  output_memory_size);

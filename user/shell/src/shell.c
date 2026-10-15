@@ -206,7 +206,6 @@ void shell_mainloop() {
 		readline(line,sizeof(line));
 
 		__shell_command_line_start[0] = '\0';
-		uppercase(line);
 		if(strcmp(line, "A:") == 0 || strcmp(line, "B:") == 0) {
 			setenv("CWD", line);
 			continue;
