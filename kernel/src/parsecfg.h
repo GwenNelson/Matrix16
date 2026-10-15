@@ -34,6 +34,15 @@ typedef enum system_cfg_default_t {
 	SYSTEM_CFG_DEFAULT_SHELL
 } system_cfg_default_t;
 
+typedef enum system_cfg_error_t {
+	SYSTEM_CFG_ERROR_DEFAULT,
+	SYSTEM_CFG_ERROR_REPORT,
+	SYSTEM_CFG_ERROR_NONE,
+	SYSTEM_CFG_ERROR_SHELL,
+	SYSTEM_CFG_ERROR_FILE_A,
+	SYSTEM_CFG_ERROR_FILE_B
+} system_cfg_error_t;
+
 typedef struct system_cfg_task_t {
 	system_cfg_source_t source;
 	system_cfg_console_t console;
@@ -42,7 +51,9 @@ typedef struct system_cfg_task_t {
 
 typedef struct system_cfg_t {
 	char shell[MATFS16_FILENAME_MAXLEN];
+	char error_filename[MATFS16_FILENAME_MAXLEN];
 	system_cfg_default_t default_action;
+	system_cfg_error_t error_action;
 	uint16_t start_delay;
 	uint16_t files;
 	system_cfg_task_t tasks[SYSTEM_CFG_TASK_COUNT];

@@ -284,70 +284,109 @@ bool startup_task(const char* filename, uint8_t drive_num, uint16_t seg, kthread
 	return true;
 }
 
+static bool startup_default_shell(uint8_t task_number, uint16_t task_segment,
+	                              uint8_t console) {
+	if(system_cfg.default_action == SYSTEM_CFG_DEFAULT_NONE) return false;
+	if(system_cfg.default_action != SYSTEM_CFG_DEFAULT_SHELL)
+		kpanic("startup_all_tasks() - invalid default action");
+
+	return startup_task(system_cfg.shell, 0, task_segment,
+	                    KTHREAD_USER_TSK0_ID + task_number, console) ||
+	       startup_task(system_cfg.shell, 1, task_segment,
+	                    KTHREAD_USER_TSK0_ID + task_number, console);
+}
+
+static bool startup_error_action(uint8_t task_number, uint16_t task_segment,
+	                             uint8_t console) {
+	switch(system_cfg.error_action) {
+		case SYSTEM_CFG_ERROR_DEFAULT:
+			if(system_cfg.default_action == SYSTEM_CFG_DEFAULT_NONE) return false;
+			return startup_default_shell(task_number, task_segment, console);
+		case SYSTEM_CFG_ERROR_REPORT:
+			report_startup_error("Could not start configured task");
+			return false;
+		case SYSTEM_CFG_ERROR_NONE:
+			return false;
+		case SYSTEM_CFG_ERROR_SHELL:
+			if(startup_default_shell(task_number, task_segment, console)) return true;
+			report_startup_error("Could not load the error shell from drive A or B");
+			return false;
+		case SYSTEM_CFG_ERROR_FILE_A:
+			if(startup_task(system_cfg.error_filename, 0, task_segment,
+			                KTHREAD_USER_TSK0_ID + task_number, console)) return true;
+			break;
+		case SYSTEM_CFG_ERROR_FILE_B:
+			if(startup_task(system_cfg.error_filename, 1, task_segment,
+			                KTHREAD_USER_TSK0_ID + task_number, console)) return true;
+			break;
+		default:
+			kpanic("startup_all_tasks() - invalid error action");
+	}
+
+	report_startup_error("Could not load the configured error task");
+	return false;
+}
+
 static void startup_configured_task(uint8_t task_number) {
-	bool try_drive_b = false;
-	uint8_t task_file_drive;
+	uint8_t task_file_drive = 0;
 	uint8_t console = (uint8_t)system_cfg.tasks[task_number].console;
 	uint16_t task_segment;
 	char task_filename[MATFS16_FILENAME_MAXLEN];
 	char* task_slot_filename;
 	matfs16_status_t status;
+	bool source_ready = true;
+	bool task_loaded = false;
 
-	switch(system_cfg.tasks[task_number].source) {
-		case SYSTEM_CFG_SOURCE_DEFAULT:
-			if(system_cfg.default_action == SYSTEM_CFG_DEFAULT_NONE) return;
-			if(system_cfg.default_action != SYSTEM_CFG_DEFAULT_SHELL) kpanic("startup_all_tasks() - invalid default action");
-			task_file_drive = 0;
-			strcpy(task_filename,system_cfg.shell);
-			try_drive_b = true;
-			break;
-		case SYSTEM_CFG_SOURCE_NONE:
-			return;
-		case SYSTEM_CFG_SOURCE_SUPER_A:
-			task_file_drive = 0;
-			status = matfs16_read_task_slot(0,task_number,task_filename,&task_slot_filename);
-			if(status != MATFS16_OK) {
-				report_startup_error("Could not read task slot from drive A");
-				return;
-			}
-			if(task_slot_filename == NULL) {
-				report_startup_error("Task slot is empty on drive A");
-				return;
-			}
-			break;
-		case SYSTEM_CFG_SOURCE_SUPER_B:
-			task_file_drive = 1;
-			status = matfs16_read_task_slot(1,task_number,task_filename,&task_slot_filename);
-			if(status != MATFS16_OK) {
-				report_startup_error("Could not read task slot from drive B");
-				return;
-			}
-			if(task_slot_filename == NULL) {
-				report_startup_error("Task slot is empty on drive B");
-				return;
-			}
-			break;
-		case SYSTEM_CFG_SOURCE_FILE_A:
-			task_file_drive = 0;
-			strcpy(task_filename,system_cfg.tasks[task_number].filename);
-			break;
-		case SYSTEM_CFG_SOURCE_FILE_B:
-			task_file_drive = 1;
-			strcpy(task_filename,system_cfg.tasks[task_number].filename);
-			break;
-		default:
-			kpanic("startup_all_tasks() - invalid state");
+	if(system_cfg.tasks[task_number].source == SYSTEM_CFG_SOURCE_NONE) return;
+	if(system_cfg.tasks[task_number].source == SYSTEM_CFG_SOURCE_DEFAULT &&
+	   system_cfg.default_action == SYSTEM_CFG_DEFAULT_NONE) return;
+	if(console >= SYSTEM_CFG_CONSOLE_COM1) {
+		report_startup_error("Serial consoles are not supported yet");
+		return;
 	}
 
 	task_segment = allocate_task_segment();
 	if(task_segment == 0) kpanic("No free task segment");
 
-	if(!startup_task(task_filename, task_file_drive, task_segment, KTHREAD_USER_TSK0_ID + task_number, console) &&
-	   (!try_drive_b || !startup_task(task_filename, 1, task_segment, KTHREAD_USER_TSK0_ID + task_number, console))) {
-		release_task_segment(task_segment);
-		if(try_drive_b) report_startup_error("Could not start default shell from drive A or B");
-		else report_startup_error("Could not start configured task");
+	switch(system_cfg.tasks[task_number].source) {
+		case SYSTEM_CFG_SOURCE_DEFAULT:
+			task_loaded = startup_default_shell(task_number, task_segment, console);
+			if(!task_loaded) report_startup_error("Could not start default shell from drive A or B");
+			break;
+		case SYSTEM_CFG_SOURCE_SUPER_A:
+			task_file_drive = 0;
+			status = matfs16_read_task_slot(0, task_number, task_filename,
+			                                &task_slot_filename);
+			if(status != MATFS16_OK || task_slot_filename == NULL) source_ready = false;
+			break;
+		case SYSTEM_CFG_SOURCE_SUPER_B:
+			task_file_drive = 1;
+			status = matfs16_read_task_slot(1, task_number, task_filename,
+			                                &task_slot_filename);
+			if(status != MATFS16_OK || task_slot_filename == NULL) source_ready = false;
+			break;
+		case SYSTEM_CFG_SOURCE_FILE_A:
+			task_file_drive = 0;
+			strcpy(task_filename, system_cfg.tasks[task_number].filename);
+			break;
+		case SYSTEM_CFG_SOURCE_FILE_B:
+			task_file_drive = 1;
+			strcpy(task_filename, system_cfg.tasks[task_number].filename);
+			break;
+		default:
+			release_task_segment(task_segment);
+			kpanic("startup_all_tasks() - invalid state");
 	}
+
+	if(source_ready && system_cfg.tasks[task_number].source != SYSTEM_CFG_SOURCE_DEFAULT)
+		task_loaded = startup_task(task_filename, task_file_drive, task_segment,
+		                          KTHREAD_USER_TSK0_ID + task_number, console);
+
+	if(!task_loaded && system_cfg.tasks[task_number].source != SYSTEM_CFG_SOURCE_DEFAULT) {
+		task_loaded = startup_error_action(task_number, task_segment, console);
+	}
+
+	if(!task_loaded) release_task_segment(task_segment);
 }
 
 void startup_all_tasks(void) {

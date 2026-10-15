@@ -12,6 +12,7 @@
 #define SYSTEM_CFG_SEEN_DEFAULT     0x0080
 #define SYSTEM_CFG_SEEN_START_DELAY 0x0100
 #define SYSTEM_CFG_SEEN_FILES       0x0200
+#define SYSTEM_CFG_SEEN_ERROR       0x0400
 
 system_cfg_t system_cfg;
 bool cfg_errors;
@@ -73,12 +74,14 @@ static void set_system_cfg_defaults(system_cfg_t* config) {
 	uint16_t i;
 
 	strcpy(config->shell, "SHELL.TSK");
+	config->error_filename[0] = '\0';
 	config->default_action = SYSTEM_CFG_DEFAULT_SHELL;
+	config->error_action = SYSTEM_CFG_ERROR_DEFAULT;
 	config->start_delay = SYSTEM_CFG_DEFAULT_START_DELAY;
 	config->files = SYSTEM_CFG_DEFAULT_FILES;
 
 	for(i = 0; i < SYSTEM_CFG_TASK_COUNT; i++) {
-		config->tasks[i].source = SYSTEM_CFG_SOURCE_DEFAULT;
+		config->tasks[i].source = i < 4 ? SYSTEM_CFG_SOURCE_SUPER_A : SYSTEM_CFG_SOURCE_NONE;
 		config->tasks[i].console = (system_cfg_console_t)i;
 		config->tasks[i].filename[0] = '\0';
 	}
@@ -115,11 +118,16 @@ static bool parse_system_cfg_source(char* value, uint16_t task_number, system_cf
 		return true;
 	}
 
-	if((value[0] != 'A' && value[0] != 'B') || value[1] != ':') return false;
-	if(!valid_system_cfg_filename(value + 2)) return false;
+	if((value[0] == 'A' || value[0] == 'B') && value[1] == ':') {
+		if(!valid_system_cfg_filename(value + 2)) return false;
+		task->source = value[0] == 'A' ? SYSTEM_CFG_SOURCE_FILE_A : SYSTEM_CFG_SOURCE_FILE_B;
+		strcpy(task->filename, value + 2);
+		return true;
+	}
 
-	task->source = value[0] == 'A' ? SYSTEM_CFG_SOURCE_FILE_A : SYSTEM_CFG_SOURCE_FILE_B;
-	strcpy(task->filename, value + 2);
+	if(!valid_system_cfg_filename(value)) return false;
+	task->source = SYSTEM_CFG_SOURCE_FILE_A;
+	strcpy(task->filename, value);
 	return true;
 }
 
@@ -156,6 +164,27 @@ static char* parse_system_cfg_line(char* line, system_cfg_t* config, uint16_t* s
 		else if(strcmp(value, "NONE") == 0) config->default_action = SYSTEM_CFG_DEFAULT_NONE;
 		else return "invalid statement";
 		*seen |= SYSTEM_CFG_SEEN_DEFAULT;
+		return 0;
+	}
+
+	if(strcmp(key, "ERROR") == 0) {
+		if(*seen & SYSTEM_CFG_SEEN_ERROR) return "duplicate statement";
+		if(strcmp(value, "DEFAULT") == 0) config->error_action = SYSTEM_CFG_ERROR_DEFAULT;
+		else if(strcmp(value, "REPORT") == 0) config->error_action = SYSTEM_CFG_ERROR_REPORT;
+		else if(strcmp(value, "NONE") == 0) config->error_action = SYSTEM_CFG_ERROR_NONE;
+		else if(strcmp(value, "SHELL") == 0) config->error_action = SYSTEM_CFG_ERROR_SHELL;
+		else {
+			if((value[0] == 'A' || value[0] == 'B') && value[1] == ':') {
+				if(!valid_system_cfg_filename(value + 2)) return "invalid error filename";
+				config->error_action = value[0] == 'A' ? SYSTEM_CFG_ERROR_FILE_A : SYSTEM_CFG_ERROR_FILE_B;
+				strcpy(config->error_filename, value + 2);
+			} else {
+				if(!valid_system_cfg_filename(value)) return "invalid error filename";
+				config->error_action = SYSTEM_CFG_ERROR_FILE_A;
+				strcpy(config->error_filename, value);
+			}
+		}
+		*seen |= SYSTEM_CFG_SEEN_ERROR;
 		return 0;
 	}
 
