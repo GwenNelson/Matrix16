@@ -3,7 +3,7 @@
 
  Matrix16 is a multitasking realmode operating system for IBM PC compatibles, 
  in particular the Amstrad PC1512 and similar platforms. The kernel is
- optimized for 512kb RAM and up to 6 tasks (4 onscreen, 2 on serial consoles)
+ optimized for 512kb RAM and up to 5 tasks (4 onscreen, 1 on serial consoles)
 
  To get started, here's some basic usage information:
 
@@ -83,7 +83,7 @@
  will check the superblock to find what tasks to launch on startup.
 
  Matrix16 currently provides 4 task slots from 0-3 intended for the virtual
- consoles (VCs), and 2 more (task 4 and task 5) intended for serial consoles.
+ consoles (VCs), and 1 more (task 4) intended for a serial console.
 
  Be warned, if you modify your superblock slots so that all 4 slots point to
  the wrong tasks, you may find your system unbootable.

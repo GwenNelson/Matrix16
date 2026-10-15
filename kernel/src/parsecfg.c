@@ -174,7 +174,7 @@ static char* parse_system_cfg_line(char* line, system_cfg_t* config, uint16_t* s
 		return 0;
 	}
 
-	if(strncmp(key, "TASK", 4) != 0 || key[4] < '0' || key[4] > '5' || key[5] != '\0') return "unknown statement";
+	if(strncmp(key, "TASK", 4) != 0 || key[4] < '0' || key[4] > '4' || key[5] != '\0') return "unknown statement";
 	task_number = key[4] - '0';
 	seen_bit = (uint16_t)1 << task_number;
 	if(*seen & seen_bit) return "duplicate statement";
@@ -202,10 +202,10 @@ static char* parse_system_cfg_line(char* line, system_cfg_t* config, uint16_t* s
 }
 
 static bool validate_system_cfg_consoles(system_cfg_t* config) {
-	bool console_used[SYSTEM_CFG_TASK_COUNT];
+	bool console_used[SYSTEM_CFG_CONSOLE_COUNT];
 	uint16_t i;
 
-	for(i = 0; i < SYSTEM_CFG_TASK_COUNT; i++) console_used[i] = false;
+	for(i = 0; i < SYSTEM_CFG_CONSOLE_COUNT; i++) console_used[i] = false;
 
 	for(i = 0; i < SYSTEM_CFG_TASK_COUNT; i++) {
 		if(config->tasks[i].source == SYSTEM_CFG_SOURCE_NONE) continue;
