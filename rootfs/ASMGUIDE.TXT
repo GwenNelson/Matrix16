@@ -1,0 +1,135 @@
+Matrix16 ASM.CMD guide
+======================
+
+ASM.CMD is a small two-pass assembler for the 8088 instruction set. It reads
+an assembly source file and writes a flat binary file:
+
+    ASM source.asm output.bin
+
+Unprefixed filenames use the shell's CWD setting. A: and B: may be given
+explicitly, for example:
+
+    ASM A:DEMO.ASM A:DEMO.BIN
+
+The output file must not already exist. Delete or rename it before assembling
+again. Filenames have the normal MatFS limit of 25 characters, not including
+the drive prefix.
+
+Assembly source
+---------------
+
+Mnemonics, register names, and labels are case-insensitive. A semicolon starts
+a comment except inside a quoted DB string. Put one instruction or directive
+on each line. A label may be alone or before an instruction:
+
+    start:
+        mov ax, 1
+    again: int 80h
+
+Numbers may be decimal, hexadecimal with an H suffix, hexadecimal with a 0x
+prefix, or hexadecimal with a leading dollar sign. For example: 10, 80h,
+0x80, and $80. Names may contain letters, digits, underscore, dot, and
+question mark; the first character may not be a digit. Names are limited to
+31 characters. The symbol table holds at most 128 labels and constants.
+
+Expressions support a single sequence of additions and subtractions, such as
+label+4 or end-start. EQU may refer to constants or labels already defined;
+ordinary instruction and data operands may refer forward to labels.
+
+Directives:
+
+    ORG 8000h       ; sets the address used for labels and fixups
+    COUNT EQU 10
+    DB 1, 2, "text", 13, 10
+    DW 1234h, start
+
+ORG may appear once, before emitted bytes. If omitted, it is zero. ORG does
+not add padding to the file: the first emitted byte is always at file offset
+zero. Thus a source file beginning with ORG 8000h can produce a command image
+whose first byte is loaded at offset 8000h. To run as a .CMD, keep the binary
+within 28,672 bytes and end it by jumping to offset 0003h, the shell return
+vector. The command itself must use Matrix16 syscalls, not DOS INT 21h.
+
+Supported instructions
+----------------------
+
+The first version supports MOV; ADD, ADC, SUB, SBB, AND, OR, XOR, CMP, TEST;
+INC, DEC, NEG, NOT; PUSH, POP; near CALL and JMP; short conditional jumps and
+LOOP, LOOPE/LOOPZ, LOOPNE/LOOPNZ, JCXZ; RET, INT, IRET, NOP, HLT; and the
+8088 string instructions MOVSB/W, CMPSB/W, STOSB/W, LODSB/W, and SCASB/W.
+CLC, STC, CLI, STI, CLD, and STD are also supported.
+
+MOV and arithmetic instructions accept common 8088 register, immediate, and
+memory forms. 8088 effective addresses use BX, BP, SI, and DI in legal
+single-register or base-plus-index combinations, optionally with a
+displacement. Examples include [BX], [BP+SI], [DI+4], and [1234h]. ES:, CS:,
+SS:, and DS: segment overrides are accepted before a memory operand. Use BYTE
+or WORD when a memory operand's size cannot be inferred, for example:
+
+    mov byte [BX], 0
+    add word [BP+4], 1
+
+Near JMP and CALL targets are 16-bit offsets. Conditional jumps and LOOP
+targets must fit the 8088's signed 8-bit relative range. PUSH immediate,
+far transfers, macros, sections, multiplication/division, shifts, and
+80186-or-later instructions are not supported. Source lines are limited to
+127 characters. The output is limited to 65,535 bytes and may not cross the
+end of the 64 KiB segment.
+
+System calls
+------------
+
+Matrix16 system calls use software interrupt 80h. Load the call number in AX,
+put arguments in the listed registers, execute INT 80h, and read the result
+from AX. DS:DX and DS:BX are segment:offset pointers in the calling task.
+
+    mov ax, 1             ; SYS_WRITE
+    mov bx, 1              ; stdout
+    mov cx, message_end-message
+    mov dx, message
+    int 80h
+
+    mov ax, 14             ; SYS_EXEC
+    mov bx, filename       ; DS:BX, A: or B: path
+    mov cx, 0ffh           ; replace the current task
+    int 80h
+
+Current calls:
+
+  AX=1  SYS_WRITE          BX=handle, CX=byte count, DS:DX=buffer.
+                           BX=1 writes stdout; file handles are >=3.
+                           AX returns bytes written.
+  AX=2  SYS_READ           BX=0 reads keyboard input; file handles are >=3.
+                           CX is maximum count; DS:DX is buffer; AX is bytes
+                           read. Reading keyboard input may wait for a key.
+  AX=3  SYS_GET_CONSOLE    Returns console number in AX, or FFFFh.
+  AX=4  SYS_LOAD           DS:BX=path; DS:DX=destination; returns status in
+                           AX (0 success), byte length in CX.
+  AX=5  SYS_OPEN           DS:BX=path; returns file handle + 3, or FFFFh.
+  AX=6  SYS_CLOSE          BX=file handle; AX=0 success, 1 failure.
+  AX=7  SYS_WRITE_BLOCK    BX=drive (0=A:, 1=B:), CX=LBA, DS:DX=512-byte
+                           buffer; AX=0 success, 1 failure.
+  AX=8  SYS_READ_BLOCK     Same registers and result as SYS_WRITE_BLOCK.
+  AX=9  SYS_CREATE         DS:BX=path; creates a new empty file and returns
+                           its handle + 3, or FFFFh if it cannot be created.
+  AX=10 SYS_DELETE         DS:BX=path; AX=0 success, 1 failure.
+  AX=11 SYS_COPY           BX=source handle, CX=destination handle;
+                           AX=0 success, 1 failure.
+  AX=12 SYS_RENAME          DS:BX=old path, DS:DX=new path; AX=0 success,
+                           1 failure. Both paths must use the same drive.
+  AX=13 SYS_GET_FREE_BLOCKS BX=drive (0=A:, 1=B:); returns free blocks in AX,
+                           or FFFFh on error.
+  AX=14 SYS_EXEC           DS:BX=task filename, CX=target slot (0-3) or FFh
+                           for the current task. AX=0 success, 1 failure.
+  AX=15 SYS_TERM           BX=target slot (0-3) or FFh for this task.
+  AX=16 SYS_CLAIM_AUX      No arguments; AX=0 if SEG_AUX is claimed, 1 if busy.
+  AX=17 SYS_RELEASE_AUX    No arguments; AX=0 if this task released SEG_AUX,
+                           1 otherwise.
+
+File paths passed to syscalls must begin with A: or B:. A file handle is the
+value returned by SYS_OPEN or SYS_CREATE; use it with SYS_READ/SYS_WRITE and
+then close it with SYS_CLOSE. Handles 0, 1, and 2 are reserved for standard
+input, standard output, and standard error. SYS_CREATE does not replace an
+existing file. SYS_EXEC and SYS_TERM do not return when they replace or
+terminate the calling task.
+

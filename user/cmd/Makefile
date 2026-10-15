@@ -7,6 +7,7 @@ CFLAGS = -march=i8088 -Os -ffreestanding -ffixed-ds -ffixed-es -ffunction-sectio
 # This translation unit triggers an IA16 GCC ICE when both segment registers
 # are fixed. Keep DS fixed for near data; the compiler saves ES around far accesses.
 EDIT_CFLAGS = $(filter-out -ffixed-es,$(CFLAGS))
+ASM_CFLAGS = $(filter-out -ffixed-es,$(CFLAGS))
 LDFLAGS = --gc-sections
 
 .DELETE_ON_ERROR:
@@ -18,7 +19,7 @@ COMMON_LIBC_INPUTS = ../../common/libc/Makefile ../../common/libc/src/string.c .
 USER_LIBC = ../libc/build/libm16c-user.a
 USER_LIBC_INPUTS = ../libc/Makefile ../libc/src/printf.c ../libc/src/syscalls.c ../libc/include/stdio.h ../libc/include/syscalls.h ../../include/syscalls.inc
 
-all: $(BUILD)/CLS.CMD $(BUILD)/TYPE.CMD $(BUILD)/DIR.CMD $(BUILD)/SET.CMD $(BUILD)/HELP.CMD $(BUILD)/FORMAT.CMD $(BUILD)/CREATEFILE.CMD $(BUILD)/COPY.CMD $(BUILD)/COPYSYS.CMD $(BUILD)/DEL.CMD $(BUILD)/MORE.CMD $(BUILD)/REN.CMD $(BUILD)/DISKUSAGE.CMD $(BUILD)/TERMINATE.CMD $(BUILD)/EXEC.CMD $(BUILD)/EDIT.CMD
+all: $(BUILD)/CLS.CMD $(BUILD)/TYPE.CMD $(BUILD)/DIR.CMD $(BUILD)/SET.CMD $(BUILD)/HELP.CMD $(BUILD)/FORMAT.CMD $(BUILD)/CREATEFILE.CMD $(BUILD)/COPY.CMD $(BUILD)/COPYSYS.CMD $(BUILD)/DEL.CMD $(BUILD)/MORE.CMD $(BUILD)/REN.CMD $(BUILD)/DISKUSAGE.CMD $(BUILD)/TERMINATE.CMD $(BUILD)/EXEC.CMD $(BUILD)/EDIT.CMD $(BUILD)/ASM.CMD
 
 $(BUILD):
 	mkdir -p $@
@@ -63,6 +64,9 @@ $(BUILD)/diskusage_entry.o: $(SRC)/diskusage_entry.asm | $(BUILD)
 $(BUILD)/edit_entry.o: $(SRC)/edit_entry.asm | $(BUILD)
 	$(NASM) -f elf $< -o $@
 
+$(BUILD)/asm_entry.o: $(SRC)/asm_entry.asm | $(BUILD)
+	$(NASM) -f elf $< -o $@
+
 $(BUILD)/format.o: $(SRC)/format.c ../libc/include/stdio.h ../libc/include/syscalls.h ../../include/syscalls.inc | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -77,6 +81,9 @@ $(BUILD)/diskusage.o: $(SRC)/diskusage.c ../libc/include/stdio.h ../libc/include
 
 $(BUILD)/edit.o: $(SRC)/edit.c ../libc/include/stdio.h ../libc/include/syscalls.h ../../include/syscalls.inc | $(BUILD)
 	$(CC) $(EDIT_CFLAGS) -c $< -o $@
+
+$(BUILD)/asm.o: $(SRC)/asm.c ../libc/include/stdio.h ../libc/include/syscalls.h ../../include/syscalls.inc | $(BUILD)
+	$(CC) $(ASM_CFLAGS) -c $< -o $@
 
 $(COMMON_LIBC): $(COMMON_LIBC_INPUTS)
 	$(MAKE) -C ../../common/libc/
@@ -99,6 +106,9 @@ $(BUILD)/diskusage.elf: $(BUILD)/diskusage_entry.o $(BUILD)/diskusage.o $(USER_L
 $(BUILD)/edit.elf: $(BUILD)/edit_entry.o $(BUILD)/edit.o $(USER_LIBC) $(SRC)/edit.ld
 	$(LD) $(LDFLAGS) -Map $(BUILD)/edit.map -T $(SRC)/edit.ld -o $@ $(filter-out $(SRC)/edit.ld,$^)
 
+$(BUILD)/asm.elf: $(BUILD)/asm_entry.o $(BUILD)/asm.o $(USER_LIBC) $(SRC)/asm.ld
+	$(LD) $(LDFLAGS) -Map $(BUILD)/asm.map -T $(SRC)/asm.ld -o $@ $(filter-out $(SRC)/asm.ld,$^)
+
 $(BUILD)/FORMAT.CMD: $(BUILD)/format.elf
 	$(OBJCOPY) -O binary $< $@
 	@test "$$(wc -c < $@)" -le $(CMD_MAX_SIZE) || \
@@ -120,6 +130,11 @@ $(BUILD)/DISKUSAGE.CMD: $(BUILD)/diskusage.elf
 		{ echo "$@ exceeds the 8000h-EFFFh command region"; false; }
 
 $(BUILD)/EDIT.CMD: $(BUILD)/edit.elf
+	$(OBJCOPY) -O binary $< $@
+	@test "$$(wc -c < $@)" -le $(CMD_MAX_SIZE) || \
+		{ echo "$@ exceeds the 8000h-EFFFh command region"; false; }
+
+$(BUILD)/ASM.CMD: $(BUILD)/asm.elf
 	$(OBJCOPY) -O binary $< $@
 	@test "$$(wc -c < $@)" -le $(CMD_MAX_SIZE) || \
 		{ echo "$@ exceeds the 8000h-EFFFh command region"; false; }
@@ -155,6 +170,6 @@ $(BUILD)/EXEC.CMD: $(SRC)/exec.asm | $(BUILD)
 		{ echo "$@ exceeds the 8000h-EFFFh command region"; false; }
 
 clean:
-	rm -f $(BUILD)/CLS.CMD $(BUILD)/TYPE.CMD $(BUILD)/DIR.CMD $(BUILD)/SET.CMD $(BUILD)/HELP.CMD $(BUILD)/format_entry.o $(BUILD)/format.o $(BUILD)/format.elf $(BUILD)/format.map $(BUILD)/FORMAT.CMD $(BUILD)/createfile_entry.o $(BUILD)/createfile.o $(BUILD)/createfile.elf $(BUILD)/createfile.map $(BUILD)/CREATEFILE.CMD $(BUILD)/copysys_entry.o $(BUILD)/copysys.o $(BUILD)/copysys.elf $(BUILD)/copysys.map $(BUILD)/COPYSYS.CMD $(BUILD)/COPY.CMD $(BUILD)/DEL.CMD $(BUILD)/MORE.CMD $(BUILD)/REN.CMD $(BUILD)/diskusage_entry.o $(BUILD)/diskusage.o $(BUILD)/diskusage.elf $(BUILD)/diskusage.map $(BUILD)/DISKUSAGE.CMD $(BUILD)/TERMINATE.CMD $(BUILD)/EXEC.CMD $(BUILD)/edit_entry.o $(BUILD)/edit.o $(BUILD)/edit.elf $(BUILD)/edit.map $(BUILD)/EDIT.CMD
+	rm -f $(BUILD)/CLS.CMD $(BUILD)/TYPE.CMD $(BUILD)/DIR.CMD $(BUILD)/SET.CMD $(BUILD)/HELP.CMD $(BUILD)/format_entry.o $(BUILD)/format.o $(BUILD)/format.elf $(BUILD)/format.map $(BUILD)/FORMAT.CMD $(BUILD)/createfile_entry.o $(BUILD)/createfile.o $(BUILD)/createfile.elf $(BUILD)/createfile.map $(BUILD)/CREATEFILE.CMD $(BUILD)/copysys_entry.o $(BUILD)/copysys.o $(BUILD)/copysys.elf $(BUILD)/copysys.map $(BUILD)/COPYSYS.CMD $(BUILD)/COPY.CMD $(BUILD)/DEL.CMD $(BUILD)/MORE.CMD $(BUILD)/REN.CMD $(BUILD)/diskusage_entry.o $(BUILD)/diskusage.o $(BUILD)/diskusage.elf $(BUILD)/diskusage.map $(BUILD)/DISKUSAGE.CMD $(BUILD)/TERMINATE.CMD $(BUILD)/EXEC.CMD $(BUILD)/edit_entry.o $(BUILD)/edit.o $(BUILD)/edit.elf $(BUILD)/edit.map $(BUILD)/EDIT.CMD $(BUILD)/asm_entry.o $(BUILD)/asm.o $(BUILD)/asm.elf $(BUILD)/asm.map $(BUILD)/ASM.CMD
 
 .PHONY: all clean
