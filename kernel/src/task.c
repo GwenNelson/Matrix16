@@ -17,7 +17,12 @@
 #endif
 
 static const char task_magic[MTSK16_MAGIC_SIZE] = MTSK16_MAGIC;
-static uint8_t task_lzss_history[M16_LZSS_WINDOW_SIZE];
+static uint8_t task_lzss_history[M16_LZSS_WINDOW_SIZE] SEG_SYS_BSS;
+
+static uint8_t __far *task_lzss_history_ptr(void) {
+	return (uint8_t __far *)mk_farptr(SEG_SYS,
+	                                (uint16_t)task_lzss_history);
+}
 
 static void report_loaded_block(void) {
 	bios_putchar('.', cur_page_no);
@@ -204,7 +209,7 @@ task_status_t task_restore(uint8_t drive_no, uint16_t first_lba,
 
 		if(!m16_lzss_decompress(compressed, compressed_size,
 		                        (uint8_t __far *)mk_farptr(buffers->memory_segment, 0),
-		                        decoded_size, task_lzss_history)) {
+			                        decoded_size, task_lzss_history_ptr())) {
 			return TASK_ERR_BAD_COMPRESSION;
 		}
 	}

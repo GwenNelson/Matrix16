@@ -54,7 +54,7 @@ bool m16_lzss_compress(const uint8_t M16_LZSS_FAR *input,
  * result and must be discarded.
  */
 bool m16_lzss_decompress(const uint8_t M16_LZSS_FAR *input,
-	                         uint16_t input_size,
-	                         uint8_t M16_LZSS_FAR *output,
-	                         m16_lzss_length_t output_length,
-	                         uint8_t *history);
+	                     uint16_t input_size,
+	                     uint8_t M16_LZSS_FAR *output,
+	                     m16_lzss_length_t output_length,
+	                     uint8_t M16_LZSS_FAR *history);

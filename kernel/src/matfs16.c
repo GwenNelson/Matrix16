@@ -15,9 +15,9 @@ static uint8_t blockchain_cache[2][MATFS16_BLOCKCHAIN_BLOCK_COUNT][MATFS16_BLOCK
 static uint8_t blockchain_cache_valid[2];
 
 static uint8_t matfs16_thread_scratch[KTHREAD_MAX_ID + 1][MATFS16_BLOCK_SIZE]
-	__attribute__((aligned(MATFS16_BLOCK_SIZE)));
+	__attribute__((aligned(MATFS16_BLOCK_SIZE))) SEG_SYS_BSS;
 static uint8_t matfs16_bootstrap_scratch[MATFS16_BLOCK_SIZE]
-	__attribute__((aligned(MATFS16_BLOCK_SIZE)));
+	__attribute__((aligned(MATFS16_BLOCK_SIZE))) SEG_SYS_BSS;
 
 typedef struct matfs16_write_cursor_t {
 	uint16_t first_lba;
@@ -40,21 +40,49 @@ typedef struct matfs16_directory_cursor_t {
  * position per thread, so each next block needs only one chain lookup. */
 static matfs16_write_cursor_t write_cursors[KTHREAD_MAX_ID + 1];
 
-static uint8_t* get_scratch_buf(void);
-static uint16_t directory_checksum(uint8_t* bytes);
-static uint16_t blockchain_checksum(uint8_t* bytes);
+static uint8_t __far *get_scratch_buf(void);
+static uint16_t scratch_offset(void);
+static matfs16_status_t load_scratch_block(uint8_t drive_no, uint16_t lba);
+static matfs16_status_t store_scratch_block(uint8_t drive_no, uint16_t lba);
+static uint16_t directory_checksum(const uint8_t __far *bytes);
+static uint16_t blockchain_checksum(const uint8_t __far *bytes);
 static matfs16_status_t directory_cursor_start(uint8_t drive_no,
 	                                            matfs16_directory_cursor_t* cursor,
-	                                            matfs_directory_block_t** directory);
+	                                            matfs_directory_block_t __far **directory);
 static matfs16_status_t directory_cursor_next(uint8_t drive_no,
 	                                           matfs16_directory_cursor_t* cursor,
-	                                           matfs_directory_block_t** directory);
+	                                           matfs_directory_block_t __far **directory);
 
-static uint16_t read_u16(const uint8_t* bytes) {
+static uint16_t read_u16(const uint8_t __far *bytes) {
 	return (uint16_t)bytes[0] | ((uint16_t)bytes[1] << 8);
 }
 
-static bool verify_super(matfs_superblock_t* super) {
+static bool filename_matches_far(const char __far *stored, const char *wanted) {
+	while(*stored && *wanted) {
+		if(*stored++ != *wanted++) return false;
+	}
+	return *stored == *wanted;
+}
+
+static void copy_filename_from_far(char *destination, const char __far *source) {
+	for(uint8_t i = 0; i < MATFS16_FILENAME_MAXLEN; i++) {
+		destination[i] = source[i];
+		if(source[i] == '\0') return;
+	}
+	destination[MATFS16_FILENAME_MAXLEN - 1] = '\0';
+}
+
+static matfs_directory_entry_t __far *kernel_entry_far(const matfs_directory_entry_t *entry) {
+	return (matfs_directory_entry_t __far *)mk_farptr(SEG_KERN,
+	                                               (uint16_t)entry);
+}
+
+static uint8_t __far *cached_blockchain_block(uint8_t drive_no, uint16_t block) {
+	return (uint8_t __far *)mk_farptr(SEG_KERN,
+	                                (uint16_t)blockchain_cache[drive_no][block]);
+}
+
+static bool verify_super(matfs_superblock_t __far *super) {
 	uint16_t task_first[4];
 	uint16_t i;
 	uint16_t checksum;
@@ -115,8 +143,8 @@ static bool verify_super(matfs_superblock_t* super) {
 	return true;
 }
 
-static bool verify_directory_block(matfs_directory_block_t* directory) {
-	uint8_t* bytes = (uint8_t*)directory;
+static bool verify_directory_block(matfs_directory_block_t __far *directory) {
+	const uint8_t __far *bytes = (const uint8_t __far *)directory;
 	uint16_t i;
 
 	if(directory->magic[0] != 'D' || directory->magic[1] != 'I' || directory->magic[2] != 'R' || directory->magic[3] != '\0') return false;
@@ -130,7 +158,7 @@ static bool verify_directory_block(matfs_directory_block_t* directory) {
 	return true;
 }
 
-static bool verify_rootdir(matfs_directory_block_t* rootdir) {
+static bool verify_rootdir(matfs_directory_block_t __far *rootdir) {
 	if(!verify_directory_block(rootdir)) return false;
 
 	/* The first root block points back to itself. */
@@ -149,10 +177,11 @@ static bool verify_rootdir(matfs_directory_block_t* rootdir) {
 	return true;
 }
 
-static bool verify_file_entry(matfs_directory_entry_t* entry) {
+static bool verify_file_entry(matfs_directory_entry_t __far *entry) {
 	uint16_t name_length;
 
-	name_length = strnlen(entry->name, MATFS16_FILENAME_MAXLEN);
+	for(name_length = 0; name_length < MATFS16_FILENAME_MAXLEN &&
+	    entry->name[name_length] != '\0'; name_length++);
 	if(name_length == 0 || name_length == MATFS16_FILENAME_MAXLEN) return false;
 
 	/* Empty files have no allocated block. */
@@ -167,7 +196,8 @@ static bool verify_file_entry(matfs_directory_entry_t* entry) {
 	return true;
 }
 
-static void copy_directory_entry(matfs_directory_entry_t* destination, matfs_directory_entry_t* source) {
+static void copy_directory_entry(matfs_directory_entry_t __far *destination,
+	                            const matfs_directory_entry_t __far *source) {
 	uint16_t i;
 
 	destination->first_block = source->first_block;
@@ -176,11 +206,11 @@ static void copy_directory_entry(matfs_directory_entry_t* destination, matfs_dir
 	for(i = 0; i < MATFS16_FILENAME_MAXLEN; i++) destination->name[i] = source->name[i];
 }
 
-static bool verify_blockchain_block(uint8_t* blockchain) {
+static bool verify_blockchain_block(const uint8_t __far *blockchain) {
 	return blockchain_checksum(blockchain) == read_u16(blockchain);
 }
 
-static uint16_t directory_checksum(uint8_t* bytes) {
+static uint16_t directory_checksum(const uint8_t __far *bytes) {
 	uint16_t checksum = 0;
 	uint16_t offset;
 
@@ -191,7 +221,7 @@ static uint16_t directory_checksum(uint8_t* bytes) {
 	return checksum;
 }
 
-static uint16_t blockchain_checksum(uint8_t* bytes) {
+static uint16_t blockchain_checksum(const uint8_t __far *bytes) {
 	uint16_t checksum = 0;
 	uint16_t offset;
 
@@ -204,23 +234,23 @@ static uint16_t blockchain_entry_offset(uint16_t relative_block) {
 }
 
 static matfs16_status_t set_blockchain_entry(uint8_t drive_no, uint16_t relative_block, uint16_t value) {
-	uint8_t* scratch_buf = get_scratch_buf();
+	uint8_t __far *scratch_buf = get_scratch_buf();
 	uint16_t blockchain_lba;
 	matfs16_status_t status;
 
 	if(relative_block >= MATFS16_DATA_BLOCK_COUNT) return MATFS16_ERR_INVALID_ARGUMENT;
 	blockchain_lba = MATFS16_BLOCKCHAIN_LBA + relative_block / MATFS16_BLOCKCHAIN_ENTRIES_PER_BLOCK;
-	status = matfs16_load_block(drive_no, blockchain_lba, SEG_KERN, (uint16_t)scratch_buf);
+	status = load_scratch_block(drive_no, blockchain_lba);
 	if(status != MATFS16_OK) return status;
 	if(!verify_blockchain_block(scratch_buf)) return MATFS16_ERR_BAD_BLOCKCHAIN;
 
-	*(uint16_t*)(scratch_buf + blockchain_entry_offset(relative_block)) = value;
-	*(uint16_t*)scratch_buf = blockchain_checksum(scratch_buf);
-	return matfs16_store_block(drive_no, blockchain_lba, SEG_KERN, (uint16_t)scratch_buf);
+		*(uint16_t __far *)(scratch_buf + blockchain_entry_offset(relative_block)) = value;
+		*(uint16_t __far *)scratch_buf = blockchain_checksum(scratch_buf);
+	return store_scratch_block(drive_no, blockchain_lba);
 }
 
 static matfs16_status_t allocate_data_block(uint8_t drive_no, uint16_t* lba) {
-	uint8_t* scratch_buf = get_scratch_buf();
+	uint8_t __far *scratch_buf = get_scratch_buf();
 	uint16_t sector_index;
 	uint16_t relative_block;
 	uint16_t offset;
@@ -229,8 +259,7 @@ static matfs16_status_t allocate_data_block(uint8_t drive_no, uint16_t* lba) {
 	if(lba == NULL) return MATFS16_ERR_INVALID_ARGUMENT;
 
 	for(sector_index = 0; sector_index < MATFS16_BLOCKCHAIN_BLOCK_COUNT; sector_index++) {
-		status = matfs16_load_block(drive_no, MATFS16_BLOCKCHAIN_LBA + sector_index,
-		                            SEG_KERN, (uint16_t)scratch_buf);
+		status = load_scratch_block(drive_no, MATFS16_BLOCKCHAIN_LBA + sector_index);
 		if(status != MATFS16_OK) return status;
 		if(!verify_blockchain_block(scratch_buf)) return MATFS16_ERR_BAD_BLOCKCHAIN;
 
@@ -239,15 +268,14 @@ static matfs16_status_t allocate_data_block(uint8_t drive_no, uint16_t* lba) {
 			if(relative_block >= MATFS16_DATA_BLOCK_COUNT) break;
 			if(read_u16(scratch_buf + offset) != MATFS16_CHAIN_FREE) continue;
 
-			*(uint16_t*)(scratch_buf + offset) = MATFS16_CHAIN_END;
-			*(uint16_t*)scratch_buf = blockchain_checksum(scratch_buf);
-			status = matfs16_store_block(drive_no, MATFS16_BLOCKCHAIN_LBA + sector_index,
-			                             SEG_KERN, (uint16_t)scratch_buf);
+			*(uint16_t __far *)(scratch_buf + offset) = MATFS16_CHAIN_END;
+			*(uint16_t __far *)scratch_buf = blockchain_checksum(scratch_buf);
+			status = store_scratch_block(drive_no, MATFS16_BLOCKCHAIN_LBA + sector_index);
 			if(status != MATFS16_OK) return status;
 
 			for(offset = 0; offset < MATFS16_BLOCK_SIZE; offset++) scratch_buf[offset] = 0;
 			*lba = MATFS16_DATA_START_LBA + relative_block;
-			return matfs16_store_block(drive_no, *lba, SEG_KERN, (uint16_t)scratch_buf);
+			return store_scratch_block(drive_no, *lba);
 		}
 	}
 
@@ -260,7 +288,7 @@ static matfs16_status_t find_directory_entry(uint8_t drive_no, const char* filen
 	                                            matfs_directory_entry_t* entry,
 	                                            bool scan_all_blocks) {
 	matfs16_directory_cursor_t cursor;
-	matfs_directory_block_t* directory;
+	matfs_directory_block_t __far *directory;
 	matfs16_status_t status;
 	uint16_t first_entry;
 	uint16_t entries_in_block;
@@ -281,11 +309,12 @@ static matfs16_status_t find_directory_entry(uint8_t drive_no, const char* filen
 
 		for(i = 0; i < entries_in_block; i++) {
 			if(!verify_file_entry(&directory->entries[i])) return MATFS16_ERR_BAD_DIRECTORY;
-			if(strcmp(directory->entries[i].name, filename) == 0) {
+			if(filename_matches_far(directory->entries[i].name, filename)) {
 				if(entry_lba != NULL) *entry_lba = cursor.current_lba;
 				if(entry_slot != NULL) *entry_slot = (uint8_t)i;
 				if(entry_index != NULL) *entry_index = first_entry + i;
-				if(entry != NULL) copy_directory_entry(entry, &directory->entries[i]);
+				if(entry != NULL) copy_directory_entry(kernel_entry_far(entry),
+				                                      &directory->entries[i]);
 				return MATFS16_OK;
 			}
 		}
@@ -315,41 +344,41 @@ static matfs16_status_t find_directory_entry(uint8_t drive_no, const char* filen
 static matfs16_status_t update_file_entry(uint8_t drive_no, const char* filename,
 	                                        uint16_t first_block, uint16_t block_count,
 	                                        uint16_t logical_size) {
-	uint8_t* scratch_buf = get_scratch_buf();
+	uint8_t __far *scratch_buf = get_scratch_buf();
 	uint16_t directory_lba;
 	uint8_t entry_slot;
-	matfs_directory_block_t* directory;
+	matfs_directory_block_t __far * directory;
 	matfs16_status_t status;
 
 	status = find_directory_entry(drive_no, filename, &directory_lba, &entry_slot, NULL, NULL, false);
 	if(status != MATFS16_OK) return status;
-	status = matfs16_load_block(drive_no, directory_lba, SEG_KERN, (uint16_t)scratch_buf);
+	status = load_scratch_block(drive_no, directory_lba);
 	if(status != MATFS16_OK) return status;
-	directory = (matfs_directory_block_t*)scratch_buf;
+	directory = (matfs_directory_block_t __far *)scratch_buf;
 	directory->entries[entry_slot].first_block = first_block;
 	directory->entries[entry_slot].block_count = block_count;
 	directory->entries[entry_slot].logical_size = logical_size;
 	directory->checksum = directory_checksum(scratch_buf);
-	return matfs16_store_block(drive_no, directory_lba, SEG_KERN, (uint16_t)scratch_buf);
+	return store_scratch_block(drive_no, directory_lba);
 }
 
 static matfs16_status_t set_directory_entry_count(uint8_t drive_no, uint16_t root_lba,
 	                                               uint16_t root_blocks, uint16_t count) {
-	uint8_t* scratch_buf = get_scratch_buf();
+	uint8_t __far *scratch_buf = get_scratch_buf();
 	uint16_t current_lba = root_lba;
 	uint16_t block_index;
 	uint16_t next_lba;
 	matfs16_status_t status;
-	matfs_directory_block_t* directory;
+	matfs_directory_block_t __far * directory;
 
 	for(block_index = 0; block_index < root_blocks; block_index++) {
-		status = matfs16_load_block(drive_no, current_lba, SEG_KERN, (uint16_t)scratch_buf);
+		status = load_scratch_block(drive_no, current_lba);
 		if(status != MATFS16_OK) return status;
-		directory = (matfs_directory_block_t*)scratch_buf;
+		directory = (matfs_directory_block_t __far *)scratch_buf;
 		if(!verify_directory_block(directory)) return MATFS16_ERR_BAD_DIRECTORY;
 		directory->entry_count = count;
 		directory->checksum = directory_checksum(scratch_buf);
-		status = matfs16_store_block(drive_no, current_lba, SEG_KERN, (uint16_t)scratch_buf);
+		status = store_scratch_block(drive_no, current_lba);
 		if(status != MATFS16_OK) return status;
 
 		if(block_index + 1 < root_blocks) {
@@ -364,18 +393,17 @@ static matfs16_status_t set_directory_entry_count(uint8_t drive_no, uint16_t roo
 
 static matfs16_status_t get_blockchain_entry(uint8_t drive_no, uint16_t relative_block,
 	                                           uint16_t* value) {
-	uint8_t* scratch_buf = get_scratch_buf();
-	uint8_t* blockchain;
+	uint8_t __far *scratch_buf = get_scratch_buf();
+		uint8_t __far *blockchain;
 	uint16_t blockchain_block;
 	matfs16_status_t status;
 
 	if(drive_no > 1 || relative_block >= MATFS16_DATA_BLOCK_COUNT || value == NULL) return MATFS16_ERR_INVALID_ARGUMENT;
 	blockchain_block = relative_block / MATFS16_BLOCKCHAIN_ENTRIES_PER_BLOCK;
 	if(blockchain_cache_valid[drive_no]) {
-		blockchain = blockchain_cache[drive_no][blockchain_block];
+		blockchain = cached_blockchain_block(drive_no, blockchain_block);
 	} else {
-		status = matfs16_load_block(drive_no, MATFS16_BLOCKCHAIN_LBA + blockchain_block,
-		                            SEG_KERN, (uint16_t)scratch_buf);
+		status = load_scratch_block(drive_no, MATFS16_BLOCKCHAIN_LBA + blockchain_block);
 		if(status != MATFS16_OK) return status;
 		if(!verify_blockchain_block(scratch_buf)) return MATFS16_ERR_BAD_BLOCKCHAIN;
 		blockchain = scratch_buf;
@@ -435,27 +463,40 @@ static void release_bios_lock(void) {
 	);
 }
 
-static uint8_t* get_scratch_buf(void) {
+static uint16_t scratch_offset(void) {
 	kthread_id_t thread = kthread_cur_thread();
 
 	/* Use the bootstrap buffer before the scheduler has selected a thread. */
-	if(thread == KTHREAD_INVALID_ID || thread > KTHREAD_MAX_ID) return matfs16_bootstrap_scratch;
+	if(thread == KTHREAD_INVALID_ID || thread > KTHREAD_MAX_ID)
+		return (uint16_t)&matfs16_bootstrap_scratch;
 
-	return matfs16_thread_scratch[thread];
+	return (uint16_t)matfs16_thread_scratch +
+	       (uint16_t)thread * MATFS16_BLOCK_SIZE;
+}
+
+static uint8_t __far *get_scratch_buf(void) {
+	return (uint8_t __far *)mk_farptr(SEG_SYS, scratch_offset());
+}
+
+static matfs16_status_t load_scratch_block(uint8_t drive_no, uint16_t lba) {
+	return matfs16_load_block(drive_no, lba, SEG_SYS, scratch_offset());
+}
+
+static matfs16_status_t store_scratch_block(uint8_t drive_no, uint16_t lba) {
+	return matfs16_store_block(drive_no, lba, SEG_SYS, scratch_offset());
 }
 
 /* Read the superblock and return the primary root directory location. */
 static matfs16_status_t read_root_info(uint8_t drive_no, uint16_t* root_lba,
 	                                   uint16_t* root_blocks) {
-	uint8_t* scratch_buf = get_scratch_buf();
-	matfs_superblock_t* super;
+	uint8_t __far *scratch_buf = get_scratch_buf();
+	matfs_superblock_t __far * super;
 	matfs16_status_t status;
 
-	status = matfs16_load_block(drive_no, MATFS16_SUPERBLOCK_LBA,
-	                            SEG_KERN, (uint16_t)scratch_buf);
+	status = load_scratch_block(drive_no, MATFS16_SUPERBLOCK_LBA);
 	if(status != MATFS16_OK) return status;
 
-	super = (matfs_superblock_t*)scratch_buf;
+	super = (matfs_superblock_t __far *)scratch_buf;
 	if(!verify_super(super)) return MATFS16_ERR_BAD_SUPERBLOCK;
 	if(super->root_dir_start == 0) return MATFS16_ERR_NOT_FOUND;
 
@@ -467,16 +508,15 @@ static matfs16_status_t read_root_info(uint8_t drive_no, uint16_t* root_lba,
 /* Load and validate one root-directory block using the shared scratch buffer. */
 static matfs16_status_t load_directory_block(uint8_t drive_no,
 	                                          matfs16_directory_cursor_t* cursor,
-	                                          matfs_directory_block_t** directory_out) {
-	uint8_t* scratch_buf = get_scratch_buf();
-	matfs_directory_block_t* directory;
+	                                          matfs_directory_block_t __far ** directory_out) {
+	uint8_t __far *scratch_buf = get_scratch_buf();
+	matfs_directory_block_t __far * directory;
 	matfs16_status_t status;
 
-	status = matfs16_load_block(drive_no, cursor->current_lba,
-	                            SEG_KERN, (uint16_t)scratch_buf);
+	status = load_scratch_block(drive_no, cursor->current_lba);
 	if(status != MATFS16_OK) return status;
 
-	directory = (matfs_directory_block_t*)scratch_buf;
+	directory = (matfs_directory_block_t __far *)scratch_buf;
 	if(cursor->block_index == 0) {
 		if(!verify_rootdir(directory)) return MATFS16_ERR_BAD_DIRECTORY;
 		cursor->entry_count = directory->entry_count;
@@ -498,7 +538,7 @@ static matfs16_status_t load_directory_block(uint8_t drive_no,
 /* Start at the first directory block, checking the superblock and root. */
 static matfs16_status_t directory_cursor_start(uint8_t drive_no,
 	                                            matfs16_directory_cursor_t* cursor,
-	                                            matfs_directory_block_t** directory) {
+	                                            matfs_directory_block_t __far ** directory) {
 	matfs16_status_t status;
 
 	status = read_root_info(drive_no, &cursor->root_lba, &cursor->root_blocks);
@@ -514,9 +554,9 @@ static matfs16_status_t directory_cursor_start(uint8_t drive_no,
 /* Advance one block, checking that the directory hint agrees with the chain. */
 static matfs16_status_t directory_cursor_next(uint8_t drive_no,
 	                                           matfs16_directory_cursor_t* cursor,
-	                                           matfs_directory_block_t** directory) {
-	matfs_directory_block_t* current =
-		(matfs_directory_block_t*)get_scratch_buf();
+	                                           matfs_directory_block_t __far ** directory) {
+	matfs_directory_block_t __far * current =
+		(matfs_directory_block_t __far *)get_scratch_buf();
 	uint16_t hinted_next_lba = current->next_block;
 	uint16_t next_lba;
 	matfs16_status_t status;
@@ -535,7 +575,7 @@ static matfs16_status_t directory_cursor_next(uint8_t drive_no,
 
 matfs16_status_t matfs16_locate_root(uint8_t drive_no, uint16_t* lba, uint16_t* block_count) {
 	matfs16_directory_cursor_t cursor;
-	matfs_directory_block_t* root;
+	matfs_directory_block_t __far * root;
 	matfs16_status_t status;
 
 	if(lba == NULL || block_count == NULL) return MATFS16_ERR_INVALID_ARGUMENT;
@@ -548,8 +588,8 @@ matfs16_status_t matfs16_locate_root(uint8_t drive_no, uint16_t* lba, uint16_t* 
 
 matfs16_status_t matfs16_read_direntry(uint8_t drive_no, uint16_t index, matfs_directory_entry_t* entry) {
 	matfs16_directory_cursor_t cursor;
-	matfs_directory_block_t* directory;
-	matfs_directory_entry_t* selected_entry;
+	matfs_directory_block_t __far * directory;
+	matfs_directory_entry_t __far *selected_entry;
 	matfs16_status_t status;
 	uint16_t target_block;
 	uint16_t target_entry;
@@ -566,15 +606,15 @@ matfs16_status_t matfs16_read_direntry(uint8_t drive_no, uint16_t index, matfs_d
 		if(status != MATFS16_OK) return status;
 	}
 
-	selected_entry = &directory->entries[target_entry];
+	selected_entry = (matfs_directory_entry_t __far *)&directory->entries[target_entry];
 	if(!verify_file_entry(selected_entry)) return MATFS16_ERR_BAD_DIRECTORY;
-	copy_directory_entry(entry, selected_entry);
+	copy_directory_entry(kernel_entry_far(entry), selected_entry);
 	return MATFS16_OK;
 }
 
 matfs16_status_t matfs16_read_task_slot(uint8_t drive_no, uint8_t slot, char* filename, char** result) {
-	uint8_t* scratch_buf;
-	matfs_superblock_t* super;
+	uint8_t __far *scratch_buf;
+	matfs_superblock_t __far * super;
 	matfs_directory_entry_t entry;
 	matfs16_status_t status;
 	uint16_t first_block;
@@ -584,11 +624,10 @@ matfs16_status_t matfs16_read_task_slot(uint8_t drive_no, uint8_t slot, char* fi
 	*result = NULL;
 
 	scratch_buf = get_scratch_buf();
-	status = matfs16_load_block(drive_no, MATFS16_SUPERBLOCK_LBA,
-	                            SEG_KERN, (uint16_t)scratch_buf);
+	status = load_scratch_block(drive_no, MATFS16_SUPERBLOCK_LBA);
 	if(status != MATFS16_OK) return status;
 
-	super = (matfs_superblock_t*)scratch_buf;
+	super = (matfs_superblock_t __far *)scratch_buf;
 	if(!verify_super(super)) return MATFS16_ERR_BAD_SUPERBLOCK;
 
 	if(slot == 0) first_block = super->task0;
@@ -604,7 +643,7 @@ matfs16_status_t matfs16_read_task_slot(uint8_t drive_no, uint8_t slot, char* fi
 		if(status != MATFS16_OK) return status;
 
 		if(entry.first_block == first_block) {
-			strcpy(filename, entry.name);
+			copy_filename_from_far(filename, entry.name);
 			*result = filename;
 			return MATFS16_OK;
 		}
@@ -676,7 +715,9 @@ matfs16_status_t matfs16_cache_blockchain(uint8_t drive_no) {
 		status = matfs16_load_block(drive_no, MATFS16_BLOCKCHAIN_LBA + block,
 		                            SEG_KERN, (uint16_t)destination);
 		if(status != MATFS16_OK) return status;
-		if(!verify_blockchain_block(destination)) return MATFS16_ERR_BAD_BLOCKCHAIN;
+		if(!verify_blockchain_block((const uint8_t __far *)
+		                            mk_farptr(SEG_KERN, (uint16_t)destination)))
+			return MATFS16_ERR_BAD_BLOCKCHAIN;
 	}
 
 	blockchain_cache_valid[drive_no] = 1;
@@ -698,8 +739,8 @@ matfs16_status_t matfs16_count_free_blocks(uint8_t drive_no, uint16_t* count) {
 	if(status != MATFS16_OK) return status;
 
 	for(relative_block = 0; relative_block < MATFS16_DATA_BLOCK_COUNT; relative_block++) {
-		value = read_u16(blockchain_cache[drive_no][relative_block /
-		                    MATFS16_BLOCKCHAIN_ENTRIES_PER_BLOCK] +
+		value = read_u16(cached_blockchain_block(drive_no,
+		                  relative_block / MATFS16_BLOCKCHAIN_ENTRIES_PER_BLOCK) +
 		                  blockchain_entry_offset(relative_block));
 		if(value == MATFS16_CHAIN_FREE) free_blocks++;
 	}
@@ -732,9 +773,9 @@ matfs16_status_t matfs16_store_block(uint8_t drive_no, uint16_t lba, uint16_t se
 }
 
 matfs16_status_t matfs16_create_file(uint8_t drive_no, const char* filename) {
-	uint8_t* scratch_buf = get_scratch_buf();
-	matfs_directory_block_t* directory;
-	matfs_directory_entry_t* entry;
+	uint8_t __far *scratch_buf = get_scratch_buf();
+	matfs_directory_block_t __far * directory;
+	matfs_directory_entry_t __far *entry;
 	matfs16_status_t status;
 	uint16_t root_lba;
 	uint16_t root_blocks;
@@ -758,9 +799,9 @@ matfs16_status_t matfs16_create_file(uint8_t drive_no, const char* filename) {
 
 	status = matfs16_locate_root(drive_no, &root_lba, &root_blocks);
 	if(status != MATFS16_OK) return status;
-	status = matfs16_load_block(drive_no, root_lba, SEG_KERN, (uint16_t)scratch_buf);
+	status = load_scratch_block(drive_no, root_lba);
 	if(status != MATFS16_OK) return status;
-	directory = (matfs_directory_block_t*)scratch_buf;
+	directory = (matfs_directory_block_t __far *)scratch_buf;
 	entry_count = directory->entry_count;
 	if(entry_count >= root_blocks * MATFS16_DIRECTORY_ENTRIES_PER_BLOCK) return MATFS16_ERR_DIRECTORY_FULL;
 
@@ -773,9 +814,9 @@ matfs16_status_t matfs16_create_file(uint8_t drive_no, const char* filename) {
 		current_lba = next_lba;
 	}
 
-	status = matfs16_load_block(drive_no, current_lba, SEG_KERN, (uint16_t)scratch_buf);
+	status = load_scratch_block(drive_no, current_lba);
 	if(status != MATFS16_OK) return status;
-	directory = (matfs_directory_block_t*)scratch_buf;
+	directory = (matfs_directory_block_t __far *)scratch_buf;
 	if(!verify_directory_block(directory)) return MATFS16_ERR_BAD_DIRECTORY;
 	entry = &directory->entries[target_slot];
 	entry->first_block = 0;
@@ -786,7 +827,7 @@ matfs16_status_t matfs16_create_file(uint8_t drive_no, const char* filename) {
 		entry->name[i] = i < name_length ? filename[i] : '\0';
 	}
 	directory->checksum = directory_checksum(scratch_buf);
-	status = matfs16_store_block(drive_no, current_lba, SEG_KERN, (uint16_t)scratch_buf);
+	status = store_scratch_block(drive_no, current_lba);
 	if(status != MATFS16_OK) return status;
 
 	return set_directory_entry_count(drive_no, root_lba, root_blocks, entry_count + 1);
@@ -913,8 +954,8 @@ matfs16_status_t matfs16_delete_file(uint8_t drive_no, const char* filename) {
 	matfs_directory_entry_t target;
 	matfs_directory_entry_t last_entry;
 	uint8_t changed_blockchain[MATFS16_BLOCKCHAIN_BLOCK_COUNT];
-	uint8_t* scratch_buf;
-	matfs_directory_block_t* directory;
+	uint8_t __far *scratch_buf;
+	matfs_directory_block_t __far * directory;
 	matfs16_status_t status;
 	uint16_t target_index;
 	uint16_t root_lba;
@@ -951,9 +992,9 @@ matfs16_status_t matfs16_delete_file(uint8_t drive_no, const char* filename) {
 
 	/* Validate the whole directory and keep its last entry for compaction. */
 	scratch_buf = get_scratch_buf();
-	status = matfs16_load_block(drive_no, root_lba, SEG_KERN, (uint16_t)scratch_buf);
+	status = load_scratch_block(drive_no, root_lba);
 	if(status != MATFS16_OK) return status;
-	directory = (matfs_directory_block_t*)scratch_buf;
+	directory = (matfs_directory_block_t __far *)scratch_buf;
 	if(!verify_rootdir(directory)) return MATFS16_ERR_BAD_DIRECTORY;
 	entry_count = directory->entry_count;
 	if(entry_count == 0 || target_index >= entry_count) return MATFS16_ERR_BAD_DIRECTORY;
@@ -963,10 +1004,9 @@ matfs16_status_t matfs16_delete_file(uint8_t drive_no, const char* filename) {
 
 	for(block_index = 0; block_index < root_blocks; block_index++) {
 		if(block_index != 0) {
-			status = matfs16_load_block(drive_no, current_lba, SEG_KERN,
-			                            (uint16_t)scratch_buf);
+			status = load_scratch_block(drive_no, current_lba);
 			if(status != MATFS16_OK) return status;
-			directory = (matfs_directory_block_t*)scratch_buf;
+			directory = (matfs_directory_block_t __far *)scratch_buf;
 			if(!verify_directory_block(directory)) return MATFS16_ERR_BAD_DIRECTORY;
 		}
 
@@ -987,7 +1027,8 @@ matfs16_status_t matfs16_delete_file(uint8_t drive_no, const char* filename) {
 			if(!verify_file_entry(&directory->entries[entry_index]))
 				return MATFS16_ERR_BAD_DIRECTORY;
 			if(first_entry + entry_index == last_index)
-				copy_directory_entry(&last_entry, &directory->entries[entry_index]);
+			copy_directory_entry(kernel_entry_far(&last_entry),
+			                     &directory->entries[entry_index]);
 		}
 
 		if(block_index + 1 < root_blocks) {
@@ -1008,13 +1049,13 @@ matfs16_status_t matfs16_delete_file(uint8_t drive_no, const char* filename) {
 	current_lba = target.first_block;
 	for(i = 0; i < target.block_count; i++) {
 		relative_block = current_lba - MATFS16_DATA_START_LBA;
-		value = read_u16(blockchain_cache[drive_no][relative_block /
-		                    MATFS16_BLOCKCHAIN_ENTRIES_PER_BLOCK] +
-		                    blockchain_entry_offset(relative_block));
+		value = read_u16(cached_blockchain_block(drive_no,
+		                  relative_block / MATFS16_BLOCKCHAIN_ENTRIES_PER_BLOCK) +
+		                  blockchain_entry_offset(relative_block));
 		changed_blockchain[relative_block / MATFS16_BLOCKCHAIN_ENTRIES_PER_BLOCK] = true;
-		*(uint16_t*)(blockchain_cache[drive_no][relative_block /
-		             MATFS16_BLOCKCHAIN_ENTRIES_PER_BLOCK] +
-		             blockchain_entry_offset(relative_block)) = MATFS16_CHAIN_FREE;
+		*(uint16_t __far *)(cached_blockchain_block(drive_no,
+		  relative_block / MATFS16_BLOCKCHAIN_ENTRIES_PER_BLOCK) +
+		  blockchain_entry_offset(relative_block)) = MATFS16_CHAIN_FREE;
 		if(i + 1 < target.block_count) current_lba = MATFS16_DATA_START_LBA + value;
 	}
 
@@ -1022,10 +1063,9 @@ matfs16_status_t matfs16_delete_file(uint8_t drive_no, const char* filename) {
 	 * block once. Counts are repeated in every block, so each checksum changes. */
 	current_lba = root_lba;
 	for(block_index = 0; block_index < root_blocks; block_index++) {
-		status = matfs16_load_block(drive_no, current_lba, SEG_KERN,
-		                            (uint16_t)scratch_buf);
+		status = load_scratch_block(drive_no, current_lba);
 		if(status != MATFS16_OK) goto cache_changed_error;
-		directory = (matfs_directory_block_t*)scratch_buf;
+		directory = (matfs_directory_block_t __far *)scratch_buf;
 		if(block_index == 0) {
 			if(!verify_rootdir(directory)) {
 				status = MATFS16_ERR_BAD_DIRECTORY;
@@ -1039,19 +1079,19 @@ matfs16_status_t matfs16_delete_file(uint8_t drive_no, const char* filename) {
 		if(target_index != last_index &&
 		   target_index / MATFS16_DIRECTORY_ENTRIES_PER_BLOCK == block_index) {
 			copy_directory_entry(&directory->entries[target_index %
-			                      MATFS16_DIRECTORY_ENTRIES_PER_BLOCK], &last_entry);
+			                      MATFS16_DIRECTORY_ENTRIES_PER_BLOCK],
+			                     kernel_entry_far(&last_entry));
 		}
 		if(last_index / MATFS16_DIRECTORY_ENTRIES_PER_BLOCK == block_index) {
-			matfs_directory_entry_t* empty = &directory->entries[last_index %
+			matfs_directory_entry_t __far *empty = &directory->entries[last_index %
 			                                  MATFS16_DIRECTORY_ENTRIES_PER_BLOCK];
 			for(entry_index = 0; entry_index < sizeof(*empty); entry_index++)
-				((uint8_t*)empty)[entry_index] = 0;
+				((uint8_t __far *)empty)[entry_index] = 0;
 		}
 
 		directory->entry_count = entry_count - 1;
 		directory->checksum = directory_checksum(scratch_buf);
-		status = matfs16_store_block(drive_no, current_lba, SEG_KERN,
-		                             (uint16_t)scratch_buf);
+		status = store_scratch_block(drive_no, current_lba);
 		if(status != MATFS16_OK) goto cache_changed_error;
 
 		if(block_index + 1 < root_blocks) {
@@ -1065,8 +1105,8 @@ matfs16_status_t matfs16_delete_file(uint8_t drive_no, const char* filename) {
 	 * once, after all directory blocks have been written successfully. */
 	for(i = 0; i < MATFS16_BLOCKCHAIN_BLOCK_COUNT; i++) {
 		if(!changed_blockchain[i]) continue;
-		*(uint16_t*)blockchain_cache[drive_no][i] =
-			blockchain_checksum(blockchain_cache[drive_no][i]);
+		*(uint16_t __far *)cached_blockchain_block(drive_no, i) =
+			blockchain_checksum(cached_blockchain_block(drive_no, i));
 		status = matfs16_store_block(drive_no, MATFS16_BLOCKCHAIN_LBA + i,
 		                             SEG_KERN,
 		                             (uint16_t)blockchain_cache[drive_no][i]);
@@ -1081,8 +1121,8 @@ cache_changed_error:
 }
 
 matfs16_status_t matfs16_rename_file(uint8_t drive_no, const char* old_name, const char* new_name) {
-	uint8_t* scratch_buf = get_scratch_buf();
-	matfs_directory_block_t* directory;
+	uint8_t __far *scratch_buf = get_scratch_buf();
+	matfs_directory_block_t __far * directory;
 	matfs16_status_t status;
 	uint16_t directory_lba;
 	uint8_t entry_slot;
@@ -1101,19 +1141,19 @@ matfs16_status_t matfs16_rename_file(uint8_t drive_no, const char* old_name, con
 	if(status == MATFS16_OK) return MATFS16_ERR_FILE_EXISTS;
 	if(status != MATFS16_ERR_NOT_FOUND) return status;
 
-	status = matfs16_load_block(drive_no, directory_lba, SEG_KERN, (uint16_t)scratch_buf);
+	status = load_scratch_block(drive_no, directory_lba);
 	if(status != MATFS16_OK) return status;
-	directory = (matfs_directory_block_t*)scratch_buf;
+	directory = (matfs_directory_block_t __far *)scratch_buf;
 	if(!verify_directory_block(directory)) return MATFS16_ERR_BAD_DIRECTORY;
 
 	for(i = 0; i < MATFS16_FILENAME_MAXLEN; i++) directory->entries[entry_slot].name[i] = '\0';
 	for(i = 0; i < new_length; i++) directory->entries[entry_slot].name[i] = new_name[i];
 	directory->checksum = directory_checksum(scratch_buf);
-	return matfs16_store_block(drive_no, directory_lba, SEG_KERN, (uint16_t)scratch_buf);
+	return store_scratch_block(drive_no, directory_lba);
 }
 
 matfs16_status_t matfs16_write_file(uint8_t drive_no, const char* filename, uint16_t position, uint16_t* last_lba, uint16_t seg, uint16_t buf, uint16_t count, uint16_t* bytes_written) {
-	uint8_t* scratch_buf = get_scratch_buf();
+	uint8_t __far *scratch_buf = get_scratch_buf();
 	uint8_t __far* source = (uint8_t __far*)mk_farptr(seg, buf);
 	matfs_directory_entry_t entry;
 	matfs16_status_t status;
@@ -1170,14 +1210,14 @@ matfs16_status_t matfs16_write_file(uint8_t drive_no, const char* filename, uint
 				if(status != MATFS16_OK) return MATFS16_ERR_BAD_BLOCKCHAIN;
 				current_lba = next_lba;
 			}
-			status = matfs16_load_block(drive_no, current_lba, SEG_KERN, (uint16_t)scratch_buf);
+			status = load_scratch_block(drive_no, current_lba);
 			if(status != MATFS16_OK) return status;
 		}
 
 		chunk = MATFS16_BLOCK_SIZE - block_offset;
 		if(chunk > remaining) chunk = remaining;
 		for(i = 0; i < chunk; i++) scratch_buf[block_offset + i] = source[written + i];
-		status = matfs16_store_block(drive_no, current_lba, SEG_KERN, (uint16_t)scratch_buf);
+		status = store_scratch_block(drive_no, current_lba);
 		if(status != MATFS16_OK) return status;
 
 		if(new_block) {
