@@ -105,6 +105,7 @@ uint8_t kfile_open(uint8_t drive_num, const char* filename) {
 		if(file_descriptors[fd].used) continue;
 
 		file_descriptors[fd].current_lba = first_lba;
+		file_descriptors[fd].write_tail_lba = 0;
 		file_descriptors[fd].length = length;
 		file_descriptors[fd].position = 0;
 		file_descriptors[fd].block_offset = 0;
@@ -144,6 +145,7 @@ uint8_t kfile_create(uint8_t drive_num, const char* filename) {
 		file_descriptors[fd].position = 0;
 		file_descriptors[fd].length = 0;
 		file_descriptors[fd].current_lba = 0;
+		file_descriptors[fd].write_tail_lba = 0;
 		file_descriptors[fd].block_offset = 0;
 		file_descriptors[fd].blocks_remaining = 0;
 		for(i = 0; i <= name_length; i++) file_descriptors[fd].filename[i] = filename[i];
@@ -199,7 +201,7 @@ bool kfile_close(uint8_t fd, uint8_t *drive_num) {
 	return true;
 }
 
-bool kfile_read(uint8_t fd, uint16_t count, uint16_t seg, uint16_t buf, uint16_t* bytes_read) {
+static bool kfile_read_locked(uint8_t fd, uint16_t count, uint16_t seg, uint16_t buf, uint16_t* bytes_read) {
 	file_desc_t* descriptor;
 	matfs16_status_t status;
 	uint16_t available;
@@ -210,10 +212,7 @@ bool kfile_read(uint8_t fd, uint16_t count, uint16_t seg, uint16_t buf, uint16_t
 	if(bytes_read == NULL) return false;
 	*bytes_read = 0;
 
-	acquire_file_lock();
-
 	if(fd >= file_descriptor_count || !file_descriptors[fd].used || file_descriptors[fd].owner != kthread_cur_thread()) {
-		release_file_lock();
 		return false;
 	}
 
@@ -224,7 +223,6 @@ bool kfile_read(uint8_t fd, uint16_t count, uint16_t seg, uint16_t buf, uint16_t
 
 	/* The bytes actually copied must fit before the end of the segment. */
 	if(remaining != 0 && remaining - 1 > 0xFFFF - buf) {
-		release_file_lock();
 		return false;
 	}
 
@@ -232,7 +230,6 @@ bool kfile_read(uint8_t fd, uint16_t count, uint16_t seg, uint16_t buf, uint16_t
 		if(descriptor->block_offset == MATFS16_BLOCK_SIZE) {
 			status = matfs16_next_block(descriptor->drive_num, descriptor->current_lba, &next_lba);
 			if(status != MATFS16_OK) {
-				release_file_lock();
 				return false;
 			}
 			if(descriptor->directory) descriptor->blocks_remaining--;
@@ -242,7 +239,6 @@ bool kfile_read(uint8_t fd, uint16_t count, uint16_t seg, uint16_t buf, uint16_t
 
 		status = matfs16_load_block(descriptor->drive_num, descriptor->current_lba, SEG_KERN, (uint16_t)file_scratch);
 		if(status != MATFS16_OK) {
-			release_file_lock();
 			return false;
 		}
 
@@ -256,11 +252,19 @@ bool kfile_read(uint8_t fd, uint16_t count, uint16_t seg, uint16_t buf, uint16_t
 		remaining -= chunk;
 	}
 
-	release_file_lock();
 	return true;
 }
 
-bool kfile_write(uint8_t fd, uint16_t count, uint16_t seg, uint16_t buf, uint16_t* bytes_written) {
+bool kfile_read(uint8_t fd, uint16_t count, uint16_t seg, uint16_t buf, uint16_t* bytes_read) {
+	bool result;
+
+	acquire_file_lock();
+	result = kfile_read_locked(fd, count, seg, buf, bytes_read);
+	release_file_lock();
+	return result;
+}
+
+static bool kfile_write_locked(uint8_t fd, uint16_t count, uint16_t seg, uint16_t buf, uint16_t* bytes_written) {
 	file_desc_t* descriptor;
 	matfs16_status_t status;
 	uint16_t written = 0;
@@ -269,20 +273,65 @@ bool kfile_write(uint8_t fd, uint16_t count, uint16_t seg, uint16_t buf, uint16_
 	*bytes_written = 0;
 	if(count != 0 && (buf > 0xFE00 || count - 1 > 0xFFFF - buf)) return false;
 
-	acquire_file_lock();
 	if(fd >= file_descriptor_count || !file_descriptors[fd].used ||
 	   file_descriptors[fd].owner != kthread_cur_thread() ||
 	   !file_descriptors[fd].writable || file_descriptors[fd].directory) {
-		release_file_lock();
 		return false;
 	}
 
 	descriptor = &file_descriptors[fd];
 	status = matfs16_write_file(descriptor->drive_num, descriptor->filename,
-	                            descriptor->position, seg, buf, count, &written);
+	                            descriptor->position, &descriptor->write_tail_lba,
+	                            seg, buf, count, &written);
 	descriptor->position += written;
 	descriptor->length += written;
 	*bytes_written = written;
-	release_file_lock();
 	return status == MATFS16_OK;
+}
+
+bool kfile_write(uint8_t fd, uint16_t count, uint16_t seg, uint16_t buf, uint16_t* bytes_written) {
+	bool result;
+
+	acquire_file_lock();
+	result = kfile_write_locked(fd, count, seg, buf, bytes_written);
+	release_file_lock();
+	return result;
+}
+
+bool kfile_copy(uint8_t source_fd, uint8_t destination_fd) {
+	file_desc_t* source;
+	file_desc_t* destination;
+	uint16_t bytes_read;
+	uint16_t bytes_written;
+	uint16_t chunk;
+	bool success = false;
+
+	acquire_file_lock();
+	if(source_fd >= file_descriptor_count || destination_fd >= file_descriptor_count ||
+	   source_fd == destination_fd || !file_descriptors[source_fd].used ||
+	   !file_descriptors[destination_fd].used) goto done;
+
+	source = &file_descriptors[source_fd];
+	destination = &file_descriptors[destination_fd];
+	if(source->owner != kthread_cur_thread() || destination->owner != kthread_cur_thread() ||
+	   source->directory || destination->directory || !destination->writable) goto done;
+	if(source->drive_num == destination->drive_num &&
+	   strcmp(source->filename, destination->filename) == 0) goto done;
+
+	while(source->position < source->length) {
+		chunk = source->length - source->position;
+		if(chunk > MATFS16_BLOCK_SIZE) chunk = MATFS16_BLOCK_SIZE;
+
+		if(!kfile_read_locked(source_fd, chunk, SEG_KERN,
+		                      (uint16_t)file_scratch, &bytes_read) || bytes_read != chunk) goto done;
+		if(!kfile_write_locked(destination_fd, bytes_read, SEG_KERN,
+		                       (uint16_t)file_scratch, &bytes_written) ||
+		   bytes_written != bytes_read) goto done;
+	}
+
+	success = true;
+
+done:
+	release_file_lock();
+	return success;
 }

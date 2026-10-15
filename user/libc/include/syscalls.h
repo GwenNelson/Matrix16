@@ -12,5 +12,6 @@ uint16_t sys_open(const char* filename);
 uint16_t sys_create(const char* filename);
 uint16_t sys_delete(const char* filename);
 uint16_t sys_close(uint16_t handle);
+uint16_t sys_copy(uint16_t source_handle, uint16_t destination_handle);
 uint16_t sys_write_block(uint8_t drive_no, uint16_t lba, const void* buffer);
 uint16_t sys_read_block(uint8_t drive_no, uint16_t lba, void* buffer);

@@ -248,6 +248,21 @@ static void k_syscall_sys_close(registers_t* regs) {
 	regs->ax = matfs16_cache_blockchain(drive_num) == MATFS16_OK ? 0 : 1;
 }
 
+static void k_syscall_sys_copy(registers_t* regs) {
+	uint8_t source_fd;
+	uint8_t destination_fd;
+
+	if(regs->bx < 3 || regs->bx > (uint16_t)KFILE_INVALID_FD + 2 ||
+	   regs->cx < 3 || regs->cx > (uint16_t)KFILE_INVALID_FD + 2) {
+		regs->ax = 1;
+		return;
+	}
+
+	source_fd = (uint8_t)(regs->bx - 3);
+	destination_fd = (uint8_t)(regs->cx - 3);
+	regs->ax = kfile_copy(source_fd, destination_fd) ? 0 : 1;
+}
+
 static void k_syscall_sys_write_block(registers_t* regs) {
 	matfs16_status_t status;
 
@@ -301,6 +316,9 @@ void k_syscall_callback(registers_t *regs) {
 		break;
 		case SYS_CLOSE:
 			k_syscall_sys_close(regs);
+		break;
+		case SYS_COPY:
+			k_syscall_sys_copy(regs);
 		break;
 		case SYS_WRITE_BLOCK:
 			k_syscall_sys_write_block(regs);

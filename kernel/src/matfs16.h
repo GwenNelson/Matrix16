@@ -182,11 +182,14 @@ matfs16_status_t matfs16_write_file_block(
 /* Remove a file and release its data chain, unless system metadata references it. */
 matfs16_status_t matfs16_delete_file(uint8_t drive_no, const char *filename);
 
-/* Append bytes at position (which must equal the current file length). */
+/* Append bytes at position (which must equal the current file length).
+ * last_lba caches the current chain tail for repeated appends; pass zero for
+ * an empty chain. The function updates it as blocks are successfully added. */
 matfs16_status_t matfs16_write_file(
 	uint8_t drive_no,
 	const char *filename,
 	uint16_t position,
+	uint16_t *last_lba,
 	uint16_t seg,
 	uint16_t buf,
 	uint16_t count,

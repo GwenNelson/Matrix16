@@ -106,6 +106,19 @@ uint16_t sys_close(uint16_t handle) {
 	return ax;
 }
 
+uint16_t sys_copy(uint16_t source_handle, uint16_t destination_handle) {
+	uint16_t ax = SYS_COPY;
+
+	__asm__ volatile (
+		"int $0x80"
+		: "+a" (ax)
+		: "b" (source_handle), "c" (destination_handle)
+		: "memory", "cc"
+	);
+
+	return ax;
+}
+
 uint16_t sys_write_block(uint8_t drive_no, uint16_t lba, const void* buffer) {
 	uint16_t ax = SYS_WRITE_BLOCK;
 

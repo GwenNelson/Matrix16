@@ -19,6 +19,18 @@ static uint8_t matfs16_thread_scratch[KTHREAD_MAX_ID + 1][MATFS16_BLOCK_SIZE]
 static uint8_t matfs16_bootstrap_scratch[MATFS16_BLOCK_SIZE]
 	__attribute__((aligned(MATFS16_BLOCK_SIZE)));
 
+typedef struct matfs16_write_cursor_t {
+	uint16_t first_lba;
+	uint16_t block_index;
+	uint16_t current_lba;
+	uint8_t drive_no;
+	bool valid;
+} matfs16_write_cursor_t;
+
+/* Sequential block writes (such as task serialization) keep their chain
+ * position per thread, so each next block needs only one chain lookup. */
+static matfs16_write_cursor_t write_cursors[KTHREAD_MAX_ID + 1];
+
 static uint8_t* get_scratch_buf(void);
 
 static uint16_t read_u16(const uint8_t* bytes) {
@@ -749,6 +761,7 @@ matfs16_status_t matfs16_store_block(uint8_t drive_no, uint16_t lba, uint16_t se
 	if(lba >= MATFS16_BLOCKCHAIN_LBA &&
 	   lba < MATFS16_BLOCKCHAIN_LBA + MATFS16_BLOCKCHAIN_BLOCK_COUNT) {
 		matfs16_invalidate_blockchain_cache(drive_no);
+		for(uint16_t i = 0; i <= KTHREAD_MAX_ID; i++) write_cursors[i].valid = false;
 	}
 
 	lba2chs(lba, &c, &h, &s);
@@ -896,17 +909,47 @@ matfs16_status_t matfs16_write_file_block(uint8_t drive_no, uint16_t first_lba,
 	                                      uint16_t block_index, uint16_t seg,
 	                                      uint16_t buf) {
 	uint16_t current_lba = first_lba;
+	kthread_id_t thread = kthread_cur_thread();
+	matfs16_write_cursor_t* cursor = NULL;
 	matfs16_status_t status;
 
 	if(drive_no > 1 || first_lba < MATFS16_DATA_START_LBA ||
 	   first_lba >= MATFS16_BLOCK_COUNT || block_index >= MATFS16_DATA_BLOCK_COUNT ||
 	   buf > 0xFE00) return MATFS16_ERR_INVALID_ARGUMENT;
 
-	for(uint16_t i = 0; i < block_index; i++) {
+	if(thread <= KTHREAD_MAX_ID) cursor = &write_cursors[thread];
+	if(block_index != 0 && cursor != NULL && cursor->valid &&
+	   cursor->drive_no == drive_no && cursor->first_lba == first_lba &&
+	   cursor->block_index + 1 == block_index) {
+		current_lba = cursor->current_lba;
 		status = matfs16_next_block(drive_no, current_lba, &current_lba);
-		if(status != MATFS16_OK) return MATFS16_ERR_BAD_BLOCKCHAIN;
+		if(status != MATFS16_OK) {
+			cursor->valid = false;
+			return MATFS16_ERR_BAD_BLOCKCHAIN;
+		}
+	} else {
+		for(uint16_t i = 0; i < block_index; i++) {
+			status = matfs16_next_block(drive_no, current_lba, &current_lba);
+			if(status != MATFS16_OK) {
+				if(cursor != NULL) cursor->valid = false;
+				return MATFS16_ERR_BAD_BLOCKCHAIN;
+			}
+		}
 	}
-	return matfs16_store_block(drive_no, current_lba, seg, buf);
+
+	status = matfs16_store_block(drive_no, current_lba, seg, buf);
+	if(cursor != NULL) {
+		if(status == MATFS16_OK) {
+			cursor->drive_no = drive_no;
+			cursor->first_lba = first_lba;
+			cursor->block_index = block_index;
+			cursor->current_lba = current_lba;
+			cursor->valid = true;
+		} else {
+			cursor->valid = false;
+		}
+	}
+	return status;
 }
 
 matfs16_status_t matfs16_delete_file(uint8_t drive_no, const char* filename) {
@@ -1080,9 +1123,7 @@ cache_changed_error:
 	return status;
 }
 
-matfs16_status_t matfs16_write_file(uint8_t drive_no, const char* filename,
-	                                  uint16_t position, uint16_t seg, uint16_t buf,
-	                                  uint16_t count, uint16_t* bytes_written) {
+matfs16_status_t matfs16_write_file(uint8_t drive_no, const char* filename, uint16_t position, uint16_t* last_lba, uint16_t seg, uint16_t buf, uint16_t count, uint16_t* bytes_written) {
 	uint8_t* scratch_buf = get_scratch_buf();
 	uint8_t __far* source = (uint8_t __far*)mk_farptr(seg, buf);
 	matfs_directory_entry_t entry;
@@ -1099,7 +1140,7 @@ matfs16_status_t matfs16_write_file(uint8_t drive_no, const char* filename,
 	uint16_t i;
 	bool new_block;
 
-	if(bytes_written == NULL) return MATFS16_ERR_INVALID_ARGUMENT;
+	if(bytes_written == NULL || last_lba == NULL) return MATFS16_ERR_INVALID_ARGUMENT;
 	*bytes_written = 0;
 	if(drive_no > 1 || filename == NULL || buf > 0xFE00 ||
 	   (count != 0 && count - 1 > 0xFFFF - buf)) return MATFS16_ERR_INVALID_ARGUMENT;
@@ -1118,15 +1159,19 @@ matfs16_status_t matfs16_write_file(uint8_t drive_no, const char* filename,
 		if(block_index > entry.block_count) return MATFS16_ERR_BAD_BLOCKCHAIN;
 
 		if(new_block) {
-			previous_lba = 0;
-			if(entry.block_count != 0) {
+			previous_lba = entry.block_count == 0 ? 0 : *last_lba;
+			if(entry.block_count != 0 && previous_lba == 0) {
 				previous_lba = entry.first_block;
 				for(i = 1; i < entry.block_count; i++) {
 					status = matfs16_next_block(drive_no, previous_lba, &next_lba);
 					if(status != MATFS16_OK) return MATFS16_ERR_BAD_BLOCKCHAIN;
 					previous_lba = next_lba;
 				}
+				*last_lba = previous_lba;
 			}
+			if(entry.block_count != 0 &&
+			   (previous_lba < MATFS16_DATA_START_LBA || previous_lba >= MATFS16_BLOCK_COUNT))
+				return MATFS16_ERR_BAD_BLOCKCHAIN;
 			status = allocate_data_block(drive_no, &current_lba);
 			if(status != MATFS16_OK) return status;
 		} else {
@@ -1163,6 +1208,7 @@ matfs16_status_t matfs16_write_file(uint8_t drive_no, const char* filename,
 		status = update_file_entry(drive_no, filename, entry.first_block,
 		                           entry.block_count, entry.logical_size);
 		if(status != MATFS16_OK) return status;
+		if(new_block) *last_lba = current_lba;
 
 		written += chunk;
 		remaining -= chunk;

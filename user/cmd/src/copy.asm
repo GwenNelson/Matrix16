@@ -2,7 +2,6 @@ BITS 16
 ORG 0x8000
 
 CMD_LINE equ 0x0100
-IO_BUFFER_SIZE equ 512
 MAX_FILENAME_LEN equ 25
 PATH_BUFFER_SIZE equ 28
 
@@ -11,6 +10,7 @@ SYS_READ  equ 2
 SYS_OPEN  equ 5
 SYS_CLOSE equ 6
 SYS_CREATE equ 9
+SYS_COPY   equ 11
 
 entry:
 	call load_default_drive
@@ -50,24 +50,13 @@ entry:
 	mov [destination_handle], ax
 	mov byte [destination_open], 1
 
-.copy_loop:
-	mov ax, SYS_READ
+	; Copy the remaining source bytes directly in the kernel.
+	mov ax, SYS_COPY
 	mov bx, [source_handle]
-	mov cx, IO_BUFFER_SIZE
-	mov dx, io_buffer
+	mov cx, [destination_handle]
 	int 0x80
 	test ax, ax
-	jz .copy_done
-	mov [bytes_read], ax
-
-	mov ax, SYS_WRITE
-	mov bx, [destination_handle]
-	mov cx, [bytes_read]
-	mov dx, io_buffer
-	int 0x80
-	cmp ax, [bytes_read]
-	jne copy_error
-	jmp .copy_loop
+	jnz copy_error
 
 .copy_done:
 	call close_open_files
@@ -305,12 +294,7 @@ source_handle:
 	dw 0
 destination_handle:
 	dw 0
-bytes_read:
-	dw 0
-
 source_path:
 	times PATH_BUFFER_SIZE db 0
 destination_path:
 	times PATH_BUFFER_SIZE db 0
-io_buffer:
-	times IO_BUFFER_SIZE db 0

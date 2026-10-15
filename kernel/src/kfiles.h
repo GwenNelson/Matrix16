@@ -10,6 +10,8 @@
 
 typedef struct file_desc_t {
 	uint16_t current_lba;
+	/* Last allocated block for appends through this writable descriptor. */
+	uint16_t write_tail_lba;
 	uint16_t length;
 	uint16_t position;
 	uint16_t block_offset;
@@ -57,3 +59,6 @@ bool kfile_read(uint8_t fd, uint16_t count, uint16_t seg, uint16_t buf, uint16_t
 
 /* Append to a writable descriptor. bytes_written reports any partial progress. */
 bool kfile_write(uint8_t fd, uint16_t count, uint16_t seg, uint16_t buf, uint16_t* bytes_written);
+
+/* Copy the source descriptor's remaining bytes to the writable destination. */
+bool kfile_copy(uint8_t source_fd, uint8_t destination_fd);
