@@ -1,15 +1,12 @@
 #include <stdint.h>
 
+#include "stdio.h"
 #include "syscalls.h"
 
 #define COMMAND_LINE ((const char*)0x0100)
 #define CREATEFILE_BUFFER_SIZE 512
 
 static char file_buffer[CREATEFILE_BUFFER_SIZE];
-
-static void write_text(uint16_t handle, const char* text, uint16_t length) {
-	sys_write(handle, text, length);
-}
 
 static uint16_t prepare_filename(char* path) {
 	const char* argument = COMMAND_LINE;
@@ -40,40 +37,37 @@ static uint16_t prepare_filename(char* path) {
 void createfile_main(void) {
 	char path[28];
 	char input;
+	char echo[2];
 	uint16_t handle;
 	uint16_t buffered = 0;
 	uint16_t count;
 
 	if(!prepare_filename(path)) {
-		static const char message[] = "Usage: CREATEFILE [A:|B:]filename\r\n";
-		write_text(1, message, sizeof(message) - 1);
+		printf("Usage: CREATEFILE [A:|B:]filename\n");
 		return;
 	}
 
 	handle = sys_create(path);
 	if(handle == SYSCALL_INVALID_HANDLE) {
-		static const char message[] = "Unable to create file\r\n";
-		write_text(1, message, sizeof(message) - 1);
+		printf("Unable to create file\n");
 		return;
 	}
 
-	{
-		static const char message[] = "Enter text; Ctrl-Z or Ctrl-D finishes.\r\n";
-		write_text(1, message, sizeof(message) - 1);
-	}
+	printf("Enter text; Ctrl-Z or Ctrl-D finishes.\n");
 
 	for(;;) {
 		if(sys_read(0, &input, 1) == 0) continue;
 		if(input == 0x1A || input == 0x04) break;
 
-		write_text(1, &input, 1);
+		echo[0] = input;
+		echo[1] = '\0';
+		printf("%s", echo);
 		file_buffer[buffered++] = input;
 		if(buffered != CREATEFILE_BUFFER_SIZE) continue;
 
 		count = sys_write(handle, file_buffer, buffered);
 		if(count != buffered) {
-			static const char message[] = "Disk write failed\r\n";
-			write_text(1, message, sizeof(message) - 1);
+			printf("Disk write failed\n");
 			buffered = 0;
 			break;
 		}
@@ -83,14 +77,10 @@ void createfile_main(void) {
 	if(buffered != 0) {
 		count = sys_write(handle, file_buffer, buffered);
 		if(count != buffered) {
-			static const char message[] = "Disk write failed\r\n";
-			write_text(1, message, sizeof(message) - 1);
+			printf("Disk write failed\n");
 		}
 	}
 
-	{
-		static const char newline[] = "\r\n";
-		write_text(1, newline, sizeof(newline) - 1);
-	}
+	printf("\n");
 	sys_close(handle);
 }

@@ -18,6 +18,9 @@
 #define MATFS16_TASK_SLOT_COUNT               4
 #define MATFS16_TASK_SLOT_EMPTY          0xFFFF
 
+/* kernel_first_block value for a formatted disk with no kernel installed. */
+#define MATFS16_KERNEL_NOT_INSTALLED     0xFFFF
+
 /* Special values stored in blockchain entries. */
 #define MATFS16_CHAIN_END              0xF00F
 #define MATFS16_CHAIN_RESERVED         0xFFFD

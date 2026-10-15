@@ -15,7 +15,7 @@ COMMON_LIBC_INPUTS = ../../common/libc/Makefile ../../common/libc/src/string.c .
 USER_LIBC = ../libc/build/libm16c-user.a
 USER_LIBC_INPUTS = ../libc/Makefile ../libc/src/printf.c ../libc/src/syscalls.c ../libc/include/stdio.h ../libc/include/syscalls.h ../../include/syscalls.inc
 
-all: $(BUILD)/CLS.CMD $(BUILD)/TYPE.CMD $(BUILD)/DIR.CMD $(BUILD)/SET.CMD $(BUILD)/HELP.CMD $(BUILD)/FORMAT.CMD $(BUILD)/CREATEFILE.CMD $(BUILD)/DEL.CMD $(BUILD)/MORE.CMD
+all: $(BUILD)/CLS.CMD $(BUILD)/TYPE.CMD $(BUILD)/DIR.CMD $(BUILD)/SET.CMD $(BUILD)/HELP.CMD $(BUILD)/FORMAT.CMD $(BUILD)/CREATEFILE.CMD $(BUILD)/COPY.CMD $(BUILD)/DEL.CMD $(BUILD)/MORE.CMD
 
 $(BUILD):
 	mkdir -p $@
@@ -51,10 +51,10 @@ $(BUILD)/format_entry.o: $(SRC)/format_entry.asm | $(BUILD)
 $(BUILD)/createfile_entry.o: $(SRC)/createfile_entry.asm | $(BUILD)
 	$(NASM) -f elf $< -o $@
 
-$(BUILD)/format.o: $(SRC)/format.c ../libc/include/syscalls.h ../../include/syscalls.inc | $(BUILD)
+$(BUILD)/format.o: $(SRC)/format.c ../libc/include/stdio.h ../libc/include/syscalls.h ../../include/syscalls.inc | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(BUILD)/createfile.o: $(SRC)/createfile.c ../libc/include/syscalls.h ../../include/syscalls.inc | $(BUILD)
+$(BUILD)/createfile.o: $(SRC)/createfile.c ../libc/include/stdio.h ../libc/include/syscalls.h ../../include/syscalls.inc | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(COMMON_LIBC): $(COMMON_LIBC_INPUTS)
@@ -89,7 +89,12 @@ $(BUILD)/MORE.CMD: $(SRC)/more.asm | $(BUILD)
 	@test "$$(wc -c < $@)" -le $(CMD_MAX_SIZE) || \
 		{ echo "$@ exceeds the 8000h-EFFFh command region"; false; }
 
+$(BUILD)/COPY.CMD: $(SRC)/copy.asm | $(BUILD)
+	$(NASM) -f bin $< -o $@
+	@test "$$(wc -c < $@)" -le $(CMD_MAX_SIZE) || \
+		{ echo "$@ exceeds the 8000h-EFFFh command region"; false; }
+
 clean:
-	rm -f $(BUILD)/CLS.CMD $(BUILD)/TYPE.CMD $(BUILD)/DIR.CMD $(BUILD)/SET.CMD $(BUILD)/HELP.CMD $(BUILD)/format_entry.o $(BUILD)/format.o $(BUILD)/format.elf $(BUILD)/format.map $(BUILD)/FORMAT.CMD $(BUILD)/createfile_entry.o $(BUILD)/createfile.o $(BUILD)/createfile.elf $(BUILD)/createfile.map $(BUILD)/CREATEFILE.CMD $(BUILD)/DEL.CMD $(BUILD)/MORE.CMD
+	rm -f $(BUILD)/CLS.CMD $(BUILD)/TYPE.CMD $(BUILD)/DIR.CMD $(BUILD)/SET.CMD $(BUILD)/HELP.CMD $(BUILD)/format_entry.o $(BUILD)/format.o $(BUILD)/format.elf $(BUILD)/format.map $(BUILD)/FORMAT.CMD $(BUILD)/createfile_entry.o $(BUILD)/createfile.o $(BUILD)/createfile.elf $(BUILD)/createfile.map $(BUILD)/CREATEFILE.CMD $(BUILD)/COPY.CMD $(BUILD)/DEL.CMD $(BUILD)/MORE.CMD
 
 .PHONY: all clean

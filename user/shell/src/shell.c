@@ -188,36 +188,57 @@ int setenv(const char* name, const char* value) {
 void shell_mainloop() {
 	char line[LINE_LENGTH];
 	char command_path[28];
+	char* command_name;
 	char* cmd_params;
-	uint16_t cmd_params_len;
+	char* cwd;
+	char command_drive[2];
 	uint16_t command_length;
 	uint16_t file_length;
 
-	// this is a seriously dumb hack
 	for(;;) {
-		printf("A:>");
+		cwd = getenv("CWD");
+		if(cwd == NULL || (strcmp(cwd, "A:") != 0 && strcmp(cwd, "B:") != 0)) {
+			printf("Invalid directory; resetting to A:\n");
+			if(setenv("CWD", "A:") == 0) cwd = getenv("CWD");
+			if(cwd == NULL || (strcmp(cwd, "A:") != 0 && strcmp(cwd, "B:") != 0)) cwd = "A:";
+		}
+		printf("%s>",cwd);
 		readline(line,sizeof(line));
 
 		__shell_command_line_start[0] = '\0';
 		uppercase(line);
-		cmd_params = strchr(line,' ');
+		if(strcmp(line, "A:") == 0 || strcmp(line, "B:") == 0) {
+			setenv("CWD", line);
+			continue;
+		}
+
+		cmd_params = strchr(line, ' ');
 		if(cmd_params != NULL) {
 			*cmd_params++ = '\0';
 			while(*cmd_params == ' ') cmd_params++;
-			cmd_params_len = strnlen(cmd_params,LINE_LENGTH);
-			memcpy(__shell_command_line_start,cmd_params,cmd_params_len+1);
-		} else {
-			cmd_params_len = 0;
+			memcpy(__shell_command_line_start, cmd_params, strnlen(cmd_params, LINE_LENGTH) + 1);
 		}
 
-		command_length = strnlen(line,22);
+		command_drive[0] = cwd[0];
+		command_drive[1] = ':';
+		command_name = line;
+		if(line[1] == ':' && (line[0] == 'A' || line[0] == 'B')) {
+			command_drive[0] = line[0];
+			command_name = line + 2;
+		} else if(strchr(line, ':') != NULL) {
+			printf("Invalid command path %s\n", line);
+			continue;
+		}
+
+		command_length = strnlen(command_name, 22);
 		if(command_length == 0 || command_length > 21) {
 			printf("Invalid command name %s\n",line);
 			continue;
 		}
-		command_path[0] = 'A';
-		command_path[1] = ':';
-		memcpy(command_path + 2,line,command_length);
+
+		command_path[0] = command_drive[0];
+		command_path[1] = command_drive[1];
+		memcpy(command_path + 2, command_name, command_length);
 		memcpy(command_path + 2 + command_length,".CMD",sizeof(".CMD"));
 
 		if(sys_load(command_path,(void*)0x8000,&file_length) != 0) {
@@ -230,8 +251,13 @@ void shell_mainloop() {
 
 }
 
-int main(void) {
+// setup default environment
+void setup_env(void) {
+	setenv("CWD","A:");
+}
 
+int main(void) {
+	setup_env();
 	uint16_t console_num;
 
 	console_num = sys_get_console();

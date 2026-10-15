@@ -27,8 +27,12 @@ SECTIONS
 
 	ASSERT(shell_return_vector == 0x0003,
 	       "return-to-shell vector must be at offset 0003h")
-	ASSERT(SIZEOF(.shell_vectors) == 6,
-	       "shell vector table must contain two three-byte near jumps")
+	ASSERT(shell_getenv_vector == 0x0006,
+	       "getenv vector must be at offset 0006h")
+	ASSERT(shell_setenv_vector == 0x0009,
+	       "setenv vector must be at offset 0009h")
+	ASSERT(SIZEOF(.shell_vectors) == 12,
+	       "shell vector table must contain four three-byte near jumps")
 
 	. = __shell_code_start;
 

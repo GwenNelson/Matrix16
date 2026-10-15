@@ -34,8 +34,8 @@ superblock:
     uint16_t    block_size          fixed 512
     uint16_t    block_count         fixed 720 for 360 KiB floppy
     uint16_t    blockchain_len      length in blocks of the blockchain
-    uint16_t    kernel_first_block  LBA of kernel first block
-    uint16_t    kernel_block_count  how many blocks to load for the kernel - if 0, the stage2 bootloader should assume a fragmented kernel
+    uint16_t    kernel_first_block  LBA of kernel first block; 0xFFFF means no kernel is installed
+    uint16_t    kernel_block_count  how many blocks to load for the kernel - if 0 with a valid first block, stage2 assumes a fragmented kernel; it must be 0 when kernel_first_block is 0xFFFF
     uint16_t    root_dir_start      LBA of root directory - if 0, no usable filesystem, but the floppy can still boot a kernel
     uint16_t    root_dir_len        how many blocks for the root directory
     uint16_t    backup_super        LBA of backup superblock (0 if it doesn't exist) - usually in one of the reserved blocks

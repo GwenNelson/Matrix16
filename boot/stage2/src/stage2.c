@@ -9,6 +9,7 @@
 #define MAT16FS_MEDIA_TYPE_360KB_FLOPPY  0
 #define MAT16FS_360KB_FLOPPY_BLOCK_COUNT 720
 #define MAT16FS_BLOCKSIZE		 512
+#define MAT16FS_KERNEL_NOT_INSTALLED 0xFFFF
 
 
 extern uint8_t boot_drive_no;
@@ -104,13 +105,17 @@ static bool verify_super(matfs_superblock_t* super) {
 	if(super->block_count    != MAT16FS_360KB_FLOPPY_BLOCK_COUNT) return false;
 	if(super->blockchain_len != 3) return false;
 
-	/* The kernel is stored in the data area; a zero count means its chain is
-	 * fragmented, while a nonzero count describes a contiguous extent. */
-	if(super->kernel_first_block < 18 ||
-	   super->kernel_first_block >= MAT16FS_360KB_FLOPPY_BLOCK_COUNT) return false;
-	if(super->kernel_block_count > 128) return false;
-	if(super->kernel_block_count != 0 &&
-	   super->kernel_block_count > MAT16FS_360KB_FLOPPY_BLOCK_COUNT - super->kernel_first_block) return false;
+	/* 0xFFFF with a zero count means formatting finished before COPYSYS
+	 * installed a kernel. Otherwise, zero count means a fragmented kernel. */
+	if(super->kernel_first_block == MAT16FS_KERNEL_NOT_INSTALLED) {
+		if(super->kernel_block_count != 0) return false;
+	} else {
+		if(super->kernel_first_block < 18 ||
+		   super->kernel_first_block >= MAT16FS_360KB_FLOPPY_BLOCK_COUNT) return false;
+		if(super->kernel_block_count > 128) return false;
+		if(super->kernel_block_count != 0 &&
+		   super->kernel_block_count > MAT16FS_360KB_FLOPPY_BLOCK_COUNT - super->kernel_first_block) return false;
+	}
 
 	/* A zero root pointer disables the filesystem; otherwise its directory
 	 * chain must start in the data area and fit within the disk. */
@@ -245,6 +250,10 @@ void stage2_main(void) {
 	bios_puts("OK\n");
 
 	bios_puts("Kernel:\n");
+	if(kernel_first_block == MAT16FS_KERNEL_NOT_INSTALLED) {
+		bios_puts("\tNo kernel installed. Use COPYSYS before booting this disk.\n");
+		for(;;);
+	}
 	if(contiguous_kernel) {
 		bios_puts("\tLoad contiguous kernel: ");
 		if(!load_contiguous_kernel()) {

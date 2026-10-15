@@ -76,6 +76,8 @@ user/cmd/build/DEL.CMD: cmds
 
 user/cmd/build/MORE.CMD: cmds
 
+user/cmd/build/COPY.CMD: cmds
+
 rootfs/SHELL.TSK: user/shell/build/SHELL.BIN taskgen
 	mkdir -p rootfs
 	./taskgen/taskgen $< $@
@@ -94,7 +96,7 @@ boot/stage2/build/stage2.bin: stage2
 
 kernel/build/kernel.bin: kernel
 
-rootfs.img: boot/stage1/build/bootsector.bin boot/stage2/build/stage2.bin kernel/build/kernel.bin fsgen rootfs/SHELL.TSK rootfs/HELLO.TSK user/cmd/build/CLS.CMD user/cmd/build/TYPE.CMD user/cmd/build/DIR.CMD user/cmd/build/SET.CMD user/cmd/build/HELP.CMD user/cmd/build/FORMAT.CMD user/cmd/build/CREATEFILE.CMD user/cmd/build/DEL.CMD user/cmd/build/MORE.CMD rootfs/README.TXT rootfs/SYSTEM.CFG
+rootfs.img: boot/stage1/build/bootsector.bin boot/stage2/build/stage2.bin kernel/build/kernel.bin fsgen rootfs/SHELL.TSK rootfs/HELLO.TSK user/cmd/build/CLS.CMD user/cmd/build/TYPE.CMD user/cmd/build/DIR.CMD user/cmd/build/SET.CMD user/cmd/build/HELP.CMD user/cmd/build/FORMAT.CMD user/cmd/build/CREATEFILE.CMD user/cmd/build/COPY.CMD user/cmd/build/DEL.CMD user/cmd/build/MORE.CMD rootfs/README.TXT rootfs/SYSTEM.CFG
 	./fsgen/fsgen rootfs.img \
 		--bootsector boot/stage1/build/bootsector.bin \
 		--stage2 boot/stage2/build/stage2.bin \
@@ -108,6 +110,7 @@ rootfs.img: boot/stage1/build/bootsector.bin boot/stage2/build/stage2.bin kernel
 		--file HELP.CMD=user/cmd/build/HELP.CMD \
 		--file FORMAT.CMD=user/cmd/build/FORMAT.CMD \
 		--file CREATEFILE.CMD=user/cmd/build/CREATEFILE.CMD \
+		--file COPY.CMD=user/cmd/build/COPY.CMD \
 		--file DEL.CMD=user/cmd/build/DEL.CMD \
 		--file MORE.CMD=user/cmd/build/MORE.CMD \
 		--file README.TXT=rootfs/README.TXT \

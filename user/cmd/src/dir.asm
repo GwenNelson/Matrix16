@@ -137,11 +137,29 @@ clear_buf:
 
 
 ; Parse an optional A:/B: prefix and leave the filename pattern in place.
-; A missing drive prefix means A:, and an empty pattern means all files.
+; Without a prefix, use the shell's CWD; an empty pattern means all files.
 parse_cmdline:
 	mov byte [drive_name], 'A'
 	mov si, CMD_LINE
 	mov word [pattern_ptr], all_files_pattern
+
+	; getenv is exposed through the shell's fixed near-call vector at 0006h.
+	mov ax, cwd_name
+	push ax
+	call 0x0006
+	add sp, 2
+	test ax, ax
+	jz .check_args
+	mov si, ax
+	mov al, [si]
+	cmp al, 'A'
+	je .use_cwd
+	cmp al, 'B'
+	jne .check_args
+.use_cwd:
+	mov [drive_name], al
+
+.check_args:
 
 	mov al, [CMD_LINE]
 	test al, al
@@ -297,6 +315,8 @@ nlstr:
 
 drive_name:
 	db 'A', ':', 0
+cwd_name:
+	db 'CWD', 0
 all_files_pattern:
 	db '*', 0
 pattern_ptr:

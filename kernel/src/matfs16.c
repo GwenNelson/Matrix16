@@ -37,10 +37,15 @@ static bool verify_super(matfs_superblock_t* super) {
 	if(super->block_count    != MATFS16_BLOCK_COUNT) return false;
 	if(super->blockchain_len != MATFS16_BLOCKCHAIN_BLOCK_COUNT) return false;
 
-	/* A zero kernel block count marks a fragmented kernel. */
-	if(super->kernel_first_block < MATFS16_DATA_START_LBA || super->kernel_first_block >= MATFS16_BLOCK_COUNT) return false;
-	if(super->kernel_block_count > 128) return false;
-	if(super->kernel_block_count != 0 && super->kernel_block_count > MATFS16_BLOCK_COUNT - super->kernel_first_block) return false;
+	/* 0xFFFF with a zero count means no kernel has been installed yet.
+	 * Otherwise, a zero count marks a fragmented kernel. */
+	if(super->kernel_first_block == MATFS16_KERNEL_NOT_INSTALLED) {
+		if(super->kernel_block_count != 0) return false;
+	} else {
+		if(super->kernel_first_block < MATFS16_DATA_START_LBA || super->kernel_first_block >= MATFS16_BLOCK_COUNT) return false;
+		if(super->kernel_block_count > 128) return false;
+		if(super->kernel_block_count != 0 && super->kernel_block_count > MATFS16_BLOCK_COUNT - super->kernel_first_block) return false;
+	}
 
 	/* A zero root pointer means that the disk has no usable filesystem. */
 	if(super->root_dir_start == 0) {
