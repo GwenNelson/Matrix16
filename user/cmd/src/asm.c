@@ -928,6 +928,8 @@ static bool parse_line(char *line) {
 		}
 	}
 
+	/* The fallback above returns to the start of the line, including indentation. */
+	skip_spaces(&p);
 	if(!read_identifier(&p, mnemonic, sizeof(mnemonic))) return false;
 	for(length = 0; mnemonic[length] != '\0'; length++) mnemonic[length] = upper_char(mnemonic[length]);
 	skip_spaces(&p);
